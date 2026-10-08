@@ -103,7 +103,7 @@ function render() {
   document.body.toggleAttribute('data-running', Boolean(open));
   setText('todayTotal', formatDuration(totals(sessions, today, addDays(today, 1), now).all));
   setText('weekTotal', formatDuration(totals(sessions, thisWeek.start, thisWeek.end, now).all));
-  setText('punch', open ? '研究を終える' : '研究を始める');
+  setText('punch', open ? '研究を止める' : '研究を始める');
   setText('specify', open ? '終わった時刻を指定する' : '始めた時刻を指定する');
   $('relabel').hidden = Boolean(open) || lastEndedDay == null;
 
@@ -172,7 +172,7 @@ for (const button of document.querySelectorAll('[data-close]')) {
   button.addEventListener('click', () => button.closest('dialog').close());
 }
 
-// ---- 時刻を指定して始める／終える ----
+// ---- 時刻を指定して始める／止める ----
 
 let timeMode = 'start';
 
