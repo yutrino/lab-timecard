@@ -1,0 +1,10 @@
+{
+  "name": "lab-timecard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8765",
+    "test": "node --test test/",
+    "icons": "node tools/make-icons.mjs"
+  }
+}

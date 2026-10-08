@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>研究タイムカード</title>
+  <meta name="theme-color" content="#f6f7f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111613" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="タイムカード">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1 class="visually-hidden">研究タイムカード</h1>
+
+    <section class="now" aria-label="いまの記録">
+      <dl class="figures">
+        <div>
+          <dt>きょう</dt>
+          <dd id="todayTotal">0分</dd>
+        </div>
+        <div>
+          <dt>今週</dt>
+          <dd id="weekTotal">0分</dd>
+        </div>
+      </dl>
+
+      <button id="punch" class="punch" type="button">研究を始める</button>
+
+      <p id="status" class="status" role="status" aria-live="polite">記録していません</p>
+
+      <p class="sub-actions">
+        <button id="relabel" class="link" type="button" hidden>区分を変える</button>
+        <button id="specify" class="link" type="button">始めた時刻を指定する</button>
+      </p>
+    </section>
+
+    <section class="week" aria-labelledby="weekTitle">
+      <header class="week-head">
+        <button id="prevWeek" class="nav" type="button" aria-label="前の週">‹</button>
+        <div>
+          <h2 id="weekTitle"></h2>
+          <p id="weekRange"></p>
+        </div>
+        <button id="nextWeek" class="nav" type="button" aria-label="次の週">›</button>
+      </header>
+
+      <ul id="days" class="days"></ul>
+
+      <table class="sheet">
+        <caption id="sheetCaption">保証表に書く数字</caption>
+        <thead>
+          <tr>
+            <th scope="col">ディスカッション</th>
+            <th scope="col">研究</th>
+            <th scope="col">発表会・練習</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td id="sheetDiscussion">0</td>
+            <td id="sheetResearch">0</td>
+            <td id="sheetPresentation">0</td>
+          </tr>
+        </tbody>
+      </table>
+      <p id="sheetExact" class="note"></p>
+    </section>
+
+    <footer>
+      <button id="syncButton" class="link" type="button">同期を設定する</button>
+    </footer>
+  </main>
+
+  <dialog id="timeDialog" aria-labelledby="timeTitle">
+    <form id="timeForm" method="dialog">
+      <h2 id="timeTitle"></h2>
+      <p id="timeText"></p>
+      <label class="field">
+        <span id="timeLabel">時刻</span>
+        <input id="timeInput" type="time" required>
+      </label>
+      <p id="timeError" class="error" role="alert"></p>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" data-close>やめる</button>
+        <button type="submit" class="primary">決定</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dayDialog" aria-labelledby="dayTitle">
+    <h2 id="dayTitle"></h2>
+    <ul id="dayRows" class="rows"></ul>
+    <p id="dayEmpty" class="note">この日の記録はありません。</p>
+    <div class="dialog-actions">
+      <button id="addRow" type="button" class="secondary">記録を足す</button>
+      <button type="button" class="primary" data-close>閉じる</button>
+    </div>
+  </dialog>
+
+  <dialog id="syncDialog" aria-labelledby="syncTitle">
+    <form id="syncForm" method="dialog">
+      <h2 id="syncTitle">同期</h2>
+      <p>スプレッドシートのウェブアプリURLを貼ると、スマホとPCで同じ記録を使えます。空にして保存すると、この端末だけに保存します。</p>
+      <label class="field">
+        <span>ウェブアプリURL</span>
+        <input id="syncInput" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
+      </label>
+      <p id="syncError" class="error" role="alert"></p>
+      <p><button id="copyLink" class="link" type="button" hidden>ほかの端末で開くリンクをコピー</button></p>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" data-close>やめる</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
