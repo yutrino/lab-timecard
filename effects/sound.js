@@ -4,9 +4,29 @@
 const C5 = 523.25;
 const note = (semitones) => C5 * 2 ** (semitones / 12);
 
+// 書き出し済みの音（sounds/*.mp3）。声は VOICEVOX:青山龍星
+export const SAMPLES = [
+  'sfx-riser', 'sfx-push', 'sfx-impact',
+  'sfx-fanfare-0', 'sfx-fanfare-1', 'sfx-fanfare-2', 'sfx-fanfare-3', 'sfx-fanfare-4',
+  'voice-push', 'voice-reach', 'voice-0', 'voice-1', 'voice-2', 'voice-3', 'voice-4',
+];
+
 export function createSound() {
   let ac = null;
   let master = null;
+  const buffers = new Map();
+  const loading = new Map();
+
+  function load(name) {
+    if (!loading.has(name)) {
+      loading.set(name, fetch(`sounds/${name}.mp3`)
+        .then((r) => r.arrayBuffer())
+        .then((data) => context().decodeAudioData(data))
+        .then((buffer) => { buffers.set(name, buffer); return buffer; })
+        .catch(() => { loading.delete(name); return null; }));
+    }
+    return loading.get(name);
+  }
 
   function context() {
     if (!ac) {
@@ -61,6 +81,30 @@ export function createSound() {
 
   return {
     unlock: context,
+
+    preload() {
+      if (!context()) return Promise.resolve();
+      return Promise.all(SAMPLES.map(load));
+    },
+
+    // 読み込み済みの音を鳴らす。まだなら読み込みだけ始めて今回は鳴らさない
+    sample(name, { gain = 1, at = 0 } = {}) {
+      const buffer = buffers.get(name);
+      const a = context();
+      if (!buffer || !a) { load(name); return null; }
+      const src = a.createBufferSource();
+      const g = a.createGain();
+      src.buffer = buffer;
+      g.gain.value = gain;
+      src.connect(g).connect(master);
+      src.start(a.currentTime + at);
+      return {
+        stop(fade = 0.05) {
+          g.gain.setTargetAtTime(0, a.currentTime, fade);
+          src.stop(a.currentTime + fade * 6);
+        },
+      };
+    },
 
     // 鳴っている音をすぐ止める（演出を飛ばしたとき）
     cut() {

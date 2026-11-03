@@ -2,7 +2,7 @@ import {
   CATS, CAT_LABEL, startOfDay, addDays, weekInfo, totals, formatDuration, roundHours,
   formatDay, formatTime, timeOnDay, openSession, merge, dedupeOpen, tierFor, streakDays,
 } from './logic.js';
-import { playEffect } from './effects/director.js';
+import { playEffect, warmUp } from './effects/director.js';
 
 const SESSIONS_KEY = 'timecard.sessions';
 const SYNC_URL_KEY = 'timecard.syncUrl';
@@ -355,6 +355,7 @@ function saveFxSettings() {
   fxSettings = { on: $('fxOn').checked, sound: $('fxSound').checked };
   writeStorage(FX_KEY, JSON.stringify(fxSettings));
   $('fxSound').disabled = !fxSettings.on;
+  warmUp(fxSettings);
   render();
 }
 
@@ -493,6 +494,7 @@ function importSyncFromHash() {
 // ---- 起動 ----
 
 importSyncFromHash();
+warmUp(fxSettings);
 render();
 promptIfStale();
 sync();

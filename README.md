@@ -18,6 +18,8 @@
   流れと秒数は [docs/effects.md](docs/effects.md) の演出表にまとめてある。
 - 演出は画面のどこかをタップすると飛ばせる。記録は押した瞬間に保存されるので、飛ばしても記録は変わらない。
 - いちばん下の「演出」から、演出と音のオン・オフを切り替えたり、各色の演出を試しに見たりできる。音は最初オフ。
+- 「押せ！」から結果までは WebGL（PixiJS）で描く。WebGL が使えない端末では CSS 版の結果になる。
+- 声は VOICEVOX:青山龍星（`npm run voices`、VOICEVOX を起動しておく）。効果音は `npm run sfx` で合成したもので、素材ファイルは使っていない。
 
 ### 集計のルール
 
@@ -66,5 +68,8 @@ ID を空にして行を足したりしても、次の同期でアプリに反�
 | `logic.js` | 週と時間の計算、同期のマージ、演出の色と連続日数（テスト対象） |
 | `effects/` | 演出（場面の進行、粒子、合成した効果音、見た目） |
 | `docs/effects.md` | 演出表 |
+| `effects/finale.js` | 押せ！〜結果の WebGL 版 |
+| `sounds/` `tools/make-voices.mjs` `tools/make-sfx.mjs` | 声と効果音、その作り方 |
+| `vendor/` | PixiJS 8.22.0・pixi-filters 6.1.5（どちらも MIT、ライセンス文を同梱） |
 | `sw.js` `manifest.webmanifest` `icons/` | ホーム画面に追加、オフラインで開く |
 | `gas/Code.gs` | 同期先のスプレッドシートに貼るスクリプト |

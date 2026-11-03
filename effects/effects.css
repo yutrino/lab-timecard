@@ -83,6 +83,8 @@
 .fx-leds.on.fast { animation-duration: 0.18s; }
 .fx-leds[data-tier="rainbow"].on { animation: fx-chase 0.18s steps(2) infinite, fx-hue 1s linear infinite; }
 
+.fx-gl { position: absolute; inset: 0; width: 100%; height: 100%; transition: opacity 0.15s; }
+
 /* 無音の暗転。結果の直前に一瞬すべてを消す */
 .fx-black { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
 
