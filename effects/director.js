@@ -466,6 +466,8 @@ const SCENES = {
     const steps = [chance() < 0.6 ? 1 : 2, chance() < 0.5 ? 2 : 3, 3, chance() < 0.5 ? 4 : 5, 5][tier];
     // 役物は赤以上だけ。上の色ほど落ちやすい
     const gimmick = chance() < [0, 0, 0.5, 0.8, 1][tier];
+    // 顔のカットイン。上の色ほど出やすい
+    const face = chance() < [0.4, 0.7, 1, 1, 1][tier];
     // リーチの帯の柄。ゼブラは激アツ以上、虹は必ず
     const pattern = tier === 4 || (tier === 3 && chance() < 0.6) || (tier === 2 && chance() < 0.15) ? 'zebra' : null;
     const sub = `今回 ${formatDuration(length)}・きょう ${formatDuration(today)}`;
@@ -475,7 +477,7 @@ const SCENES = {
     if (gl) {
       fx.hideStage();
       await gl.stop({
-        tier, shown, pseudo, withPush, steps, gimmick, pattern, values, minutes, sub,
+        tier, shown, pseudo, withPush, steps, gimmick, face, pattern, values, minutes, sub,
         sfx: fx.sfx, wait: fx.wait, waitTap: (ms) => fx.waitTap(ms), vibrate: fx.vibrate,
       });
       return;

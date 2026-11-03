@@ -1,5 +1,5 @@
 // 演出の映像（media/）と BGM（sounds/bgm-*.mp3）を、配布された素材から書き出す。
-// `npm run media -- <素材のフォルダ>`。フォルダには loopfxnet/ と BGM/ が入っている。
+// `npm run media -- <素材のフォルダ>`。フォルダには loopfxnet/ と BGM/ と 画像/ が入っている。
 // 映像：LOOP EFFECTS（anoerone）。作者の許可を得て使う。BGM：魔王魂（クレジット表記が利用条件）。
 // スマホで軽く読めるよう、映像は 480p 以下・音なし・H.264・短く切って画質を落とす（光と粒子ばかりなので目立たない）。グリーンバックは緑を抜いて黒にする（加算で重ねる）。
 import { execFileSync } from 'node:child_process';
@@ -36,6 +36,13 @@ const MUSIC = [
   ['bgm-weekly', 'maou_bgm_neorock68.mp3', 0, 40],
 ];
 
+// カットインの顔写真（フリー素材）。[書き出す名前, 元のファイル, 切り出す範囲 w:h:x:y]
+const IMAGES = [
+  ['face-neko', 'neko.jpg', '2600:1625:700:750'],
+  ['face-baby', '26506511_l.jpg', '3200:2000:175:250'],
+  ['face-man', 'sddefault.jpg', '480:300:80:80'],
+];
+
 const only = process.argv.slice(3);
 const want = (name) => !only.length || only.includes(name);
 const ffmpeg = (args) => execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...args]);
@@ -56,5 +63,10 @@ for (const [name, file, start, seconds] of MUSIC.filter(([n]) => want(n))) {
   ffmpeg(['-ss', String(start), '-t', String(seconds), '-i', path.join(SRC, 'BGM', file),
     '-af', `afade=t=out:st=${seconds - 2}:d=2,loudnorm=I=-16:TP=-1.5`, '-ar', '44100', '-ac', '2', '-c:a', 'libmp3lame', '-b:a', '128k',
     path.join(ROOT, 'sounds', `${name}.mp3`)]);
+  console.log(name);
+}
+
+for (const [name, file, crop] of IMAGES.filter(([n]) => want(n))) {
+  ffmpeg(['-i', path.join(SRC, '画像', file), '-vf', `crop=${crop},scale=720:-2:flags=lanczos`, '-q:v', '4', path.join(ROOT, 'media', `${name}.jpg`)]);
   console.log(name);
 }

@@ -575,11 +575,19 @@ export async function createGL(root) {
     vidBg.filters = [vidBgTier === 4 ? vidDim : vidGray];
     vidBg.tint = vidBgTier === 4 ? 0xffffff : TIER_COLOR[vidBgTier];
   };
+  // 背景の映像は演出の始まりに作っておく（出す瞬間に作ると映らない端末がある）
+  let vidBgReady = null;
+  const prepareVideoBg = (name) => {
+    if (vidBgReady?.name === name) return;
+    vidBgReady = clip(name, { loop: true, timeout: 6000 });
+    vidBgReady.name = name;
+  };
   async function videoBg(name, tier, alpha = 0.75) {
     vidBgTier = tier;
     vidBgAlpha = alpha;
     if (vidBgClip?.name !== name) {
-      const c = await clip(name, { loop: true });
+      prepareVideoBg(name);
+      const c = await vidBgReady;
       if (!c) return;
       vidBgClip?.destroy();
       vidBgClip = c;
@@ -724,6 +732,7 @@ export async function createGL(root) {
     beatSfx = sfx;
     ledColors(tier);
     cabinet.visible = true;
+    prepareVideoBg('bg-rainbow');
   };
 
   const strobe = (tier, n, gap = 75) => {
@@ -948,6 +957,68 @@ export async function createGL(root) {
       y: H() * 0.45,
       height: bh,
     };
+  }
+
+  // ---- 顔のカットイン：斜めの枠に顔の写真が飛び込み、ゆっくり寄っていく ----
+  async function faceCutIn(name, text, tier, sfx, voice) {
+    const img = new Image();
+    img.src = `media/${name}.jpg`;
+    const loaded = await Promise.race([img.decode().then(() => true, () => false), pause(1000).then(() => false)]);
+    if (!loaded || destroyed) return;
+    const texture = PIXI.Texture.from(img);
+    const pw = Math.hypot(W(), H()) * 1.2;
+    const ph = Math.min(H() * 0.34, W() * 0.75);
+    const c = new PIXI.Container();
+    c.rotation = -0.1;
+    c.position.set(W() * 2, H() * 0.42);
+    const glowBand = new PIXI.Graphics().rect(-pw / 2, -ph / 2 - 26, pw, ph + 52).fill(TIER_COLOR[tier]);
+    glowBand.blendMode = 'add';
+    glowBand.filters = [new PIXI.BlurFilter({ strength: 26, quality: 3 })];
+    const photo = new PIXI.Sprite(texture);
+    photo.anchor.set(0.5);
+    photo.rotation = 0.1; // 枠は斜め、写真はまっすぐ
+    const base = Math.max((W() * 1.05) / texture.width, (ph * 1.25) / texture.height);
+    photo.scale.set(base * 1.15);
+    const mask = new PIXI.Graphics().rect(-pw / 2, -ph / 2, pw, ph).fill(0xffffff);
+    photo.mask = mask;
+    const edges = new PIXI.Graphics()
+      .rect(-pw / 2, -ph / 2 - 12, pw, 12).fill(TIER_COLOR[tier])
+      .rect(-pw / 2, ph / 2, pw, 12).fill(TIER_COLOR[tier])
+      .rect(-pw / 2, -ph / 2 - 16, pw, 4).fill(0xffffff)
+      .rect(-pw / 2, ph / 2 + 12, pw, 4).fill(0xffffff);
+    const label = metalText(PIXI, FILTERS, app.renderer, tx, text, tier, ph * 0.3);
+    label.scale.set(Math.min(1, fitText(label, W() * 0.8, ph * 0.5)));
+    label.rotation = 0.1;
+    label.position.set(0, ph * 0.33);
+    label.alpha = 0;
+    c.addChild(glowBand, photo, mask, edges, label);
+    fgLayer.addChild(c);
+    const untick = ticking(label);
+    sfx.sample?.('sfx-cutin', { gain: 1 });
+    zoom.center = { x: W() / 2, y: H() * 0.42 };
+    zoom.strength = 0.3;
+    tween(zoom, { strength: 0 }, 400);
+    await tween(c, { x: W() / 2 }, 150, easeOut);
+    hitStop = 80;
+    shakeAmp = 28;
+    doFlash(TIER_COLOR[tier], 0.7, 260);
+    shockAt(W() / 2, H() * 0.42, 30);
+    if (voice) sfx.sample?.(voice, { gain: 1.35, at: 0.05 });
+    // 顔に寄りながら、文字を叩きつける
+    tween(photo.scale, { x: base * 1.45, y: base * 1.45 }, 1500, (k) => k);
+    await pause(250);
+    label.scale.set(label.scale.x * 2.2);
+    tween(label, { alpha: 1 }, 80);
+    const fit = Math.min(1, fitText(label, W() * 0.8 * 2.2, ph * 0.5 * 2.2));
+    await tween(label.scale, { x: fit, y: fit }, 140, easeIn);
+    shakeAmp = 18;
+    strobe(tier, 3);
+    burst(W() / 2, H() * 0.42 + ph * 0.3, tier, 50, 700);
+    await pause(950);
+    await tween(c, { x: -W() * 1.2 }, 170, easeIn);
+    untick();
+    c.destroy({ children: true });
+    texture.destroy(true);
   }
 
   // ---- 画面中央に叩きつける文字 ----
@@ -1568,6 +1639,21 @@ export async function createGL(root) {
       await wait(300);
       reels.set.visible = false;
       await gimmick(Math.max(shown, 2), sfx, wait);
+      reels.set.visible = true;
+    }
+
+    // 顔のカットイン（色は今の色。猫はチャンス、赤ちゃんは激アツ、男の人は超激アツ）
+    if (opts.face) {
+      await wait(300);
+      reels.set.visible = false;
+      const [name, text, voice] = [
+        ['face-neko', 'チャンス！', 'voice-chance'],
+        ['face-neko', 'チャンス！', 'voice-chance'],
+        ['face-baby', '激アツ！', 'voice-2'],
+        ['face-man', '超激アツ！', 'voice-kita'],
+        ['face-man', '超激アツ！', 'voice-kita'],
+      ][tier];
+      await faceCutIn(name, text, Math.max(shown, Math.min(tier, 3)), sfx, voice);
       reels.set.visible = true;
     }
 
