@@ -1,10 +1,11 @@
 // 電波がなくても開けるようにする。キャッシュを先に返し、裏で新しい版に入れ替える。
-const CACHE = 'timecard-v5';
+const CACHE = 'timecard-v6';
 const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'logic.js',
-  'effects/director.js', 'effects/particles.js', 'effects/sound.js', 'effects/effects.css', 'effects/finale.js',
+  'effects/director.js', 'effects/particles.js', 'effects/sound.js', 'effects/effects.css', 'effects/gl.js',
   'vendor/pixi.min.mjs', 'vendor/pixi-filters.mjs',
-  ...['sfx-riser', 'sfx-push', 'sfx-impact', 'voice-push', 'voice-reach']
+  ...['sfx-riser', 'sfx-push', 'sfx-impact', 'sfx-stop', 'sfx-tick', 'sfx-cutin', 'sfx-upgrade', 'sfx-heartbeat', 'sfx-respin', 'sfx-start',
+    'voice-push', 'voice-reach', 'voice-start', 'voice-chance']
     .concat([0, 1, 2, 3, 4].flatMap((t) => [`sfx-fanfare-${t}`, `voice-${t}`]))
     .map((name) => `sounds/${name}.mp3`),
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png',

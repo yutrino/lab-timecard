@@ -18,6 +18,8 @@ const LINES = [
   ['voice-2', 'げきあつっ！', 1.0, 0.05, 1.9],
   ['voice-3', 'おおあたりーっ！', 0.95, 0.06, 2.0],
   ['voice-4', 'ちょう、おおあたりーっ！', 0.95, 0.08, 2.0],
+  ['voice-start', 'けんきゅう、スタートッ！', 1.05, 0.05, 1.8],
+  ['voice-chance', 'チャンスッ！', 1.05, 0.06, 1.9],
 ];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'voices-'));

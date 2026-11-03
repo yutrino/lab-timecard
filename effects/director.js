@@ -4,7 +4,7 @@
 import { formatDuration } from '../logic.js';
 import { createParticles } from './particles.js';
 import { createSound } from './sound.js';
-import { createFinale, loadFinale } from './finale.js';
+import { createGL, loadGL } from './gl.js';
 
 const TIERS = ['blue', 'green', 'red', 'gold', 'rainbow'];
 const RESULT_TEXT = ['おつかれさま！', 'ナイス研究！', '激アツ！', '大当たり！', '超大当たり！！'];
@@ -35,7 +35,7 @@ export function warmUp(settings) {
   if (!settings.on) return;
   if (settings.sound) sound.preload();
   const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1500));
-  idle(() => { loadFinale().catch(() => {}); });
+  idle(() => { loadGL().catch(() => {}); });
 }
 
 // settings: { on, sound }
@@ -73,7 +73,7 @@ function createStage(controller, sfx, reduced) {
   const [shade, glow, rays, lines, canvas, stage, leds, black, flashLayer] = root.children;
   const particles = createParticles(canvas);
   const timers = new Set();
-  let finale = null;
+  let gl = null;
 
   // 「押せ！」の間だけ、タップは飛ばすのではなくボタンを押したことになる
   let onPush = null;
@@ -115,15 +115,18 @@ function createStage(controller, sfx, reduced) {
       });
     },
 
-    // WebGL の結果部分。使えない端末では null（CSSの結果に戻る）
-    prepareFinale() {
-      return createFinale(root)
-        .then((f) => {
-          if (signal.aborted) { f.destroy(); return null; }
-          finale = f;
-          return f;
+    // WebGL の舞台。使えない端末や、timeout までに用意できないときは null（CSS 版に戻る）
+    prepareGL(timeout) {
+      let late = false;
+      const ready = createGL(root)
+        .then((g) => {
+          if (late || signal.aborted) { g.destroy(); return null; }
+          gl = g;
+          return g;
         })
-        .catch((error) => { console.warn('finale unavailable', error); return null; });
+        .catch((error) => { console.warn('WebGL unavailable', error); return null; });
+      const giveUp = new Promise((resolve) => { later(() => { late = true; resolve(null); }, timeout); });
+      return Promise.race([ready, giveUp]);
     },
 
     hideStage() {
@@ -351,8 +354,8 @@ function createStage(controller, sfx, reduced) {
       root.removeEventListener('pointerdown', tap);
       document.removeEventListener('keydown', onKey, true);
       timers.forEach(clearTimeout);
-      finale?.destroy();
-      finale = null;
+      gl?.destroy();
+      gl = null;
       if (skippedByUser) sfx.cut?.();
       root.animate([{ opacity: 1 }, { opacity: 0 }], { duration: aborted ? 120 : 300, fill: 'forwards' })
         .finished.catch(() => {}).then(() => { particles.stop(); root.remove(); });
@@ -366,6 +369,14 @@ const SCENES = {
   // data: { origin: {x, y}, streak }
   async start(fx, { origin, streak }) {
     const tier = streak >= 5 ? 3 : streak >= 3 ? 2 : streak >= 2 ? 1 : 0;
+    fx.dim(0.75);
+    const gl = await fx.prepareGL(700);
+    if (gl) {
+      fx.hideStage();
+      await gl.start({ origin, streak, tier, sfx: fx.sfx, wait: fx.wait, vibrate: fx.vibrate });
+      return;
+    }
+    // WebGL が使えないときの CSS 版
     fx.dim(0.75);
     fx.ring(origin, tier);
     fx.flash(tier);
@@ -395,7 +406,19 @@ const SCENES = {
     // 色が上ほど長く溜める
     const pseudo = [0, chance() < 0.3 ? 1 : 0, 1, 2, 2][tier] + (tier >= 3 && chance() < 0.5 ? 1 : 0);
     const withPush = tier >= 2 || chance() < 0.25;
-    const finaleReady = fx.prepareFinale();
+    const sub = `今回 ${formatDuration(length)}・きょう ${formatDuration(today)}`;
+
+    fx.dim(0.96, 400);
+    const gl = await fx.prepareGL(1500);
+    if (gl) {
+      fx.hideStage();
+      await gl.stop({
+        tier, shown, pseudo, withPush, values, sub,
+        sfx: fx.sfx, wait: fx.wait, waitTap: (ms) => fx.waitTap(ms), vibrate: fx.vibrate,
+      });
+      return;
+    }
+    // WebGL が使えないときの CSS 版
 
     // 1. 暗転して溜める
     fx.dim(0.96, 400);
@@ -483,24 +506,6 @@ const SCENES = {
     }
     await fx.wait(600);
 
-    // 5〜7. 押せ！ → 無音の暗転 → 結果（WebGL）
-    const finale = await finaleReady;
-    if (finale) {
-      fx.hideStage();
-      await finale.run({
-        tier,
-        shown,
-        withPush,
-        sub: `今回 ${formatDuration(length)}・きょう ${formatDuration(today)}`,
-        sfx: fx.sfx,
-        wait: fx.wait,
-        waitTap: (ms) => fx.waitTap(ms),
-        vibrate: fx.vibrate,
-      });
-      return;
-    }
-
-    // WebGL が使えないときの CSS 版
     // 5. 押せ！ 最後の昇格はボタンで起きる
     if (withPush) {
       await fx.push(shown, 6000);

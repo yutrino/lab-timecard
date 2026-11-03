@@ -1,9 +1,9 @@
-// 止める演出の最後（押せ！ → 無音の暗転 → 結果）を WebGL（PixiJS）で描く。
+// 演出の舞台を WebGL（PixiJS）で描く。始める演出と、止める演出の全段階。
 // 発光（ブルーム）、衝撃波のゆがみ、ズームブラー、カメラの寄り引き、当たる瞬間の一瞬の静止（ヒットストップ）を使う。
 
 let modules = null;
 
-export function loadFinale() {
+export function loadGL() {
   modules ??= Promise.all([import('../vendor/pixi.min.mjs'), import('../vendor/pixi-filters.mjs')])
     .then(([PIXI, FILTERS]) => ({ PIXI, FILTERS }));
   return modules;
@@ -12,6 +12,7 @@ export function loadFinale() {
 const FONT = '"Dela Gothic One", "Hiragino Sans", sans-serif';
 const TIER_COLOR = [0x3b82f6, 0x22c55e, 0xff2d3f, 0xffc400, 0xff4fd8];
 const TIER_DARK = [0x0b2a7a, 0x064d22, 0x5a0010, 0x5a3a00, 0x3a0a6a];
+const TIER_LIGHT = [0x9cc4ff, 0x8dffb8, 0xff9a9a, 0xfff1a8, 0xffffff];
 const METAL = [
   ['#ffffff', '#cfe6ff', '#3d7dff', '#d8ecff', '#1746c4'],
   ['#ffffff', '#d4ffe2', '#22c55e', '#e0ffe9', '#0f7a39'],
@@ -217,10 +218,9 @@ function metalText(PIXI, FILTERS, renderer, tx, text, tier, size) {
 
 // ---- 本体 ----
 
-// opts: { root, tier, shown, withPush, sub, sfx, wait, waitTap, vibrate, onUpgrade }
-export async function createFinale(root) {
-  const { PIXI, FILTERS } = await loadFinale();
-  await document.fonts.load(`100px ${FONT}`, '押せ！おつかれさまナイス研究激アツ大当たり超');
+export async function createGL(root) {
+  const { PIXI, FILTERS } = await loadGL();
+  await document.fonts.load(`100px ${FONT}`, '押せ！おつかれさまナイス研究激アツ大当たり超リーチ再変動×スタート日連続0123456789');
 
   const app = new PIXI.Application();
   await app.init({
@@ -426,6 +426,401 @@ export async function createFinale(root) {
     for (const r of rings) r.tint = TIER_COLOR[tier];
   };
 
+  // ---- 中心で脈打つ光（心音に合わせる） ----
+  const core = new PIXI.Sprite(tx.dot);
+  core.anchor.set(0.5);
+  core.blendMode = 'add';
+  core.alpha = 0;
+  bgLayer.addChild(core);
+  const coreBase = () => (Math.min(W(), H()) * 1.8) / 64;
+  updaters.add(() => core.position.set(W() / 2, H() * 0.45));
+  const beat = (tier, strength = 1) => {
+    core.tint = TIER_COLOR[tier];
+    core.alpha = 0.9 * strength;
+    core.scale.set(coreBase() * (1 + 0.3 * strength));
+    tween(core, { alpha: 0.12 }, 450);
+    tween(core.scale, { x: coreBase(), y: coreBase() }, 450);
+  };
+
+  const strobe = (tier, n, gap = 75) => {
+    for (let i = 0; i < n; i += 1) later(() => doFlash(i % 2 ? TIER_COLOR[tier] : 0xffffff, 0.85, gap * 1.3), i * gap);
+  };
+
+  const fitText = (box, maxW, maxH) => Math.min(maxW / box.width, maxH / box.height);
+  const ticking = (box) => {
+    const fn = (dt) => box.tick(dt);
+    updaters.add(fn);
+    return () => updaters.delete(fn);
+  };
+
+  // ---- 数字リール：窓の中を数字の帯が縦に流れる ----
+  function makeReels(tier) {
+    const set = new PIXI.Container();
+    set.position.set(W() / 2, H() * 0.45);
+    const w = Math.min(W() * 0.24, 120);
+    const h = w * 1.3;
+    const colonW = w * 0.32;
+    const gap = w * 0.14;
+    const left = -(w * 3 + colonW + gap) / 2;
+    const xs = [left + w / 2, left + w + colonW + w / 2, left + w * 2 + colonW + gap + w / 2];
+    const silver = new PIXI.FillGradient({
+      type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local',
+      colorStops: [{ offset: 0, color: '#ffffff' }, { offset: 0.45, color: '#8a8f99' }, { offset: 0.55, color: '#5b616b' }, { offset: 1, color: '#e9edf2' }],
+    });
+    const cylinder = new PIXI.FillGradient({
+      type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local',
+      colorStops: [{ offset: 0, color: 'rgba(0,0,0,0.6)' }, { offset: 0.24, color: 'rgba(0,0,0,0)' }, { offset: 0.76, color: 'rgba(0,0,0,0)' }, { offset: 1, color: 'rgba(0,0,0,0.6)' }],
+    });
+    const reels = xs.map((x) => {
+      const r = new PIXI.Container();
+      r.x = x;
+      const glow = new PIXI.Graphics().roundRect(-w / 2 - 14, -h / 2 - 14, w + 28, h + 28, 22).fill(0xffffff);
+      glow.tint = TIER_COLOR[tier];
+      glow.blendMode = 'add';
+      glow.alpha = 0.4;
+      glow.filters = [new PIXI.BlurFilter({ strength: 14, quality: 3 })];
+      const bezel = new PIXI.Graphics().roundRect(-w / 2 - 7, -h / 2 - 7, w + 14, h + 14, 14).fill(silver);
+      const face = new PIXI.Graphics().roundRect(-w / 2, -h / 2, w, h, 9).fill(0xf6f6f4);
+      const strip = new PIXI.Container();
+      const blur = new PIXI.BlurFilter({ strengthX: 0, strengthY: 0, quality: 3 });
+      strip.filters = [blur];
+      const digits = [-1, 0, 1].map(() => {
+        const t = new PIXI.Text({ text: '0', style: { fontFamily: FONT, fontSize: h * 0.72, fill: 0x141414 }, resolution: 2 });
+        t.anchor.set(0.5);
+        strip.addChild(t);
+        return t;
+      });
+      const mask = new PIXI.Graphics().roundRect(-w / 2, -h / 2, w, h, 9).fill(0xffffff);
+      strip.mask = mask;
+      const shade = new PIXI.Graphics().roundRect(-w / 2, -h / 2, w, h, 9).fill(cylinder);
+      const gloss = new PIXI.Graphics().roundRect(-w / 2 + 6, -h / 2 + 5, w - 12, h * 0.2, 8).fill({ color: 0xffffff, alpha: 0.3 });
+      r.addChild(glow, bezel, face, strip, mask, shade, gloss);
+      set.addChild(r);
+      return { r, glow, blur, digits, offset: Math.floor(Math.random() * 10) * h, speed: 0, manual: true, reach: false };
+    });
+    const colon = new PIXI.Container();
+    colon.x = left + w + colonW / 2;
+    for (const y of [-h * 0.17, h * 0.17]) {
+      const halo = new PIXI.Sprite(tx.dot);
+      halo.anchor.set(0.5);
+      halo.blendMode = 'add';
+      halo.width = halo.height = colonW * 1.1;
+      halo.y = y;
+      halo.tint = TIER_COLOR[tier];
+      colon.addChild(halo, new PIXI.Graphics().circle(0, y, colonW * 0.15).fill(0xffffff));
+    }
+    set.addChild(colon);
+    const digit = (n) => ((n % 10) + 10) % 10;
+    let clock = 0;
+    const update = (dt) => {
+      clock += dt;
+      for (const reel of reels) {
+        if (!reel.manual) reel.offset += (reel.speed * dt) / 1000;
+        const k = Math.floor(reel.offset / h + 1e-6);
+        const frac = reel.offset / h - k;
+        reel.digits.forEach((t, i) => {
+          const j = i - 1;
+          const d = String(digit(k - j));
+          if (t.text !== d) t.text = d;
+          t.y = (frac + j) * h;
+        });
+        reel.blur.strengthY = Math.min(18, Math.abs(reel.speed) / 220);
+        if (reel.reach) reel.glow.alpha = 0.7 + 0.5 * Math.sin(clock / 70);
+      }
+    };
+    updaters.add(update);
+    set.alpha = 0;
+    set.scale.set(0.6);
+    fgLayer.addChild(set);
+    const smooth = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+
+    return {
+      set,
+      show() {
+        tween(set, { alpha: 1 }, 160);
+        return tween(set.scale, { x: 1, y: 1 }, 260, easeBack);
+      },
+      spinAll() {
+        for (const reel of reels) { reel.manual = false; reel.speed = h * 24; }
+      },
+      // 目の数字まで回して止める。勢いで少し行き過ぎて戻る
+      async stop(i, target, ms = 300) {
+        const reel = reels[i];
+        let n = Math.floor(reel.offset / h) + 3;
+        while (digit(n) !== target) n += 1;
+        reel.manual = true;
+        const v = reel.speed;
+        reel.speed = v * 0.4;
+        await tween(reel, { offset: n * h }, ms, easeBack);
+        reel.speed = 0;
+        reel.glow.alpha = 1.3;
+        tween(reel.glow, { alpha: 0.5 }, 320);
+      },
+      async slow(i, ms) {
+        await tween(reels[i], { speed: h * 4 }, ms, easeOut);
+      },
+      // 1コマだけ送る
+      async step(i, ms) {
+        const reel = reels[i];
+        reel.manual = true;
+        const n = Math.floor(reel.offset / h + 1e-6) + 1;
+        reel.speed = (h * 1000) / ms;
+        await tween(reel, { offset: n * h }, ms, smooth);
+        reel.speed = 0;
+        return digit(n);
+      },
+      setReach(i, on) {
+        reels[i].reach = on;
+        if (!on) tween(reels[i].glow, { alpha: 0.5 }, 200);
+      },
+      color(t) {
+        for (const reel of reels) reel.glow.tint = TIER_COLOR[t];
+        for (const c of colon.children) if (c instanceof PIXI.Sprite) c.tint = TIER_COLOR[t];
+        tween(set.scale, { x: 1.08, y: 1.08 }, 80).then(() => tween(set.scale, { x: 1, y: 1 }, 220, easeBack));
+      },
+      center(i) { return { x: set.x + xs[i], y: set.y }; },
+      async hide() {
+        await tween(set, { alpha: 0 }, 250);
+        updaters.delete(update);
+        set.destroy({ children: true });
+      },
+    };
+  }
+
+  // ---- 斜めの帯のカットイン ----
+  function cutIn(text, tier) {
+    const c = new PIXI.Container();
+    const bw = Math.hypot(W(), H()) * 1.4;
+    const bh = Math.min(H() * 0.16, 160);
+    const fill = tier === 4
+      ? new PIXI.FillGradient({ type: 'linear', start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, textureSpace: 'local', colorStops: RAINBOW.map((color, i) => ({ offset: i / (RAINBOW.length - 1), color })) })
+      : new PIXI.FillGradient({ type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local', colorStops: [{ offset: 0, color: TIER_LIGHT[tier] }, { offset: 0.5, color: TIER_COLOR[tier] }, { offset: 1, color: TIER_DARK[tier] }] });
+    const glowBand = new PIXI.Graphics().rect(-bw / 2, -bh / 2 - 20, bw, bh + 40).fill(TIER_COLOR[tier]);
+    glowBand.blendMode = 'add';
+    glowBand.alpha = 0.6;
+    glowBand.filters = [new PIXI.BlurFilter({ strength: 24, quality: 3 })];
+    const band = new PIXI.Graphics().rect(-bw / 2, -bh / 2, bw, bh).fill(fill);
+    const edges = new PIXI.Graphics()
+      .rect(-bw / 2, -bh / 2 - 7, bw, 7).fill(0xffffff)
+      .rect(-bw / 2, bh / 2, bw, 7).fill(0xffffff);
+    const label = metalText(PIXI, FILTERS, app.renderer, tx, text, tier === 3 ? 2 : 3, bh * 0.62);
+    label.scale.set(Math.min(1, fitText(label, W() * 0.9, bh * 1.2)));
+    const sweep = new PIXI.Sprite(tx.shine);
+    sweep.anchor.set(0.5);
+    sweep.blendMode = 'add';
+    sweep.width = W() * 0.8;
+    sweep.height = bh;
+    sweep.alpha = 0.6;
+    c.addChild(glowBand, band, sweep, edges, label);
+    c.rotation = -0.12;
+    c.position.set(W() * 1.9, H() * 0.45);
+    fgLayer.addChild(c);
+    let t = 0;
+    const untick = ticking({ tick: (dt) => { t += dt; label.tick(dt); sweep.x = ((t % 700) / 700) * bw - bw / 2; } });
+    return {
+      async enter() {
+        zoom.center = { x: W() / 2, y: H() * 0.45 };
+        zoom.strength = 0.25;
+        tween(zoom, { strength: 0 }, 450);
+        await tween(c, { x: W() / 2 }, 160, easeOut);
+        hitStop = 70;
+        shakeAmp = 26;
+        doFlash(TIER_COLOR[tier], 0.75, 260);
+        shockAt(W() / 2, H() * 0.45, 30);
+      },
+      async leave() {
+        await tween(c, { x: -W() }, 170, easeIn);
+        untick();
+        c.destroy({ children: true });
+      },
+      y: H() * 0.45,
+      height: bh,
+    };
+  }
+
+  // ---- 画面中央に叩きつける文字 ----
+  async function slam(text, tier, y = H() * 0.45, maxH = H() * 0.16) {
+    const label = metalText(PIXI, FILTERS, app.renderer, tx, text, tier, 110);
+    const fit = Math.min(1.2, fitText(label, W() * 0.84, maxH));
+    label.position.set(W() / 2, y);
+    label.scale.set(fit * 3);
+    label.alpha = 0;
+    fgLayer.addChild(label);
+    const untick = ticking(label);
+    tween(label, { alpha: 1 }, 90);
+    await tween(label.scale, { x: fit, y: fit }, 170, easeIn);
+    hitStop = 60;
+    shakeAmp = 20;
+    shockAt(W() / 2, y, 30);
+    return {
+      async leave() {
+        tween(label, { alpha: 0 }, 200);
+        await tween(label.scale, { x: fit * 0.4, y: fit * 0.4 }, 200, easeIn);
+        untick();
+        label.destroy({ children: true });
+      },
+    };
+  }
+
+  // ---- 始める ----
+  // opts: { origin, streak, tier, sfx, wait, vibrate }
+  async function start({ origin, streak, tier, sfx, wait, vibrate }) {
+    setColor(tier);
+    canvas.style.opacity = '1';
+    rays.alpha = 0.28;
+    ringAlpha = 0.25;
+    ringSpeed = 1.4;
+    shockAt(origin.x, origin.y, 70);
+    doFlash(TIER_COLOR[tier], 0.8, 320);
+    burst(origin.x, origin.y, tier, 70, 1000);
+    sfx.sample?.('sfx-start', { gain: 0.9 });
+    sfx.sample?.('voice-start', { gain: 1.3, at: 0.3 });
+    vibrate(40);
+    await wait(150);
+    const band = cutIn('研究スタート！', tier);
+    sfx.sample?.('sfx-cutin', { gain: 0.7 });
+    await band.enter();
+    for (let i = 0; i < 24; i += 1) later(() => spawn('glint', tx.glint, { x: rand(0, W()), y: rand(0, H()), life: rand(0.25, 0.5), size: rand(0.25, 0.6), fade: 0.01 }), i * 45);
+    if (streak >= 2) {
+      await wait(350);
+      const stamp = await slam(`${streak}日連続！`, 3, band.y + band.height * 1.1, H() * 0.08);
+      sfx.sample?.('sfx-upgrade', { gain: 0.7 });
+      burst(W() / 2, band.y + band.height * 1.1, 3, 40, 600);
+      await wait(800);
+      stamp.leave();
+    } else {
+      await wait(900);
+    }
+    await band.leave();
+    await tween(world, { alpha: 0 }, 220);
+  }
+
+  // ---- 止める ----
+  // opts: { tier, shown, pseudo, withPush, values, sub, sfx, wait, waitTap, vibrate }
+  async function stop(opts) {
+    const { tier, pseudo, withPush, values, sfx, wait, vibrate } = opts;
+    let { shown } = opts;
+    const rnd = () => Math.floor(Math.random() * 10);
+    setColor(shown);
+    canvas.style.opacity = '1';
+    ringAlpha = 0.06;
+    ringSpeed = 0.2;
+    bloom.bloomScale = 0.5; // 白いリールの面がにじまないよう、リールの間は発光を弱める
+    let chanceSaid = false;
+    const upgrade = (to, at) => {
+      shown = to;
+      setColor(shown);
+      reels.color(shown);
+      strobe(shown, 3);
+      shakeAmp = 16;
+      beat(shown);
+      shockAt(at.x, at.y, 25);
+      sfx.sample?.('sfx-upgrade', { gain: 0.8 });
+      if (!chanceSaid) { sfx.sample?.('voice-chance', { gain: 1.3, at: 0.1 }); chanceSaid = true; }
+      vibrate(40);
+    };
+
+    // 1. 暗転して溜める（赤以上は心音）
+    if (tier >= 2) {
+      for (const at of [0, 900]) {
+        later(() => { sfx.sample?.('sfx-heartbeat', { gain: 1 }); beat(shown, 0.6); vibrate([30, 150, 30]); }, at);
+        later(() => beat(shown, 0.4), at + 280);
+      }
+    }
+    await wait(tier >= 2 ? 1400 : 600);
+
+    // リールが現れて回り出す
+    const reels = makeReels(shown);
+    reels.spinAll();
+    sfx.sample?.('sfx-respin', { gain: 0.6 });
+    await reels.show();
+    ringAlpha = 0.18;
+    ringSpeed = 0.5;
+
+    // 2. 再変動
+    for (let i = 1; i <= pseudo; i += 1) {
+      await wait(550);
+      for (const k of [0, 2, 1]) {
+        await reels.stop(k, rnd(), 200);
+        sfx.sample?.('sfx-stop', { gain: 0.8 });
+        await wait(80);
+      }
+      await wait(350);
+      if (i >= 2 && shown < tier - 1) upgrade(shown + 1, { x: W() / 2, y: H() * 0.45 });
+      sfx.sample?.('sfx-respin', { gain: 0.9 });
+      strobe(shown, 3);
+      vibrate(50);
+      const call = await slam(`再変動×${i + 1}`, shown, H() * 0.24, H() * 0.1);
+      ringSpeed = 0.5 + i * 0.3;
+      reels.spinAll();
+      await wait(650);
+      call.leave();
+    }
+
+    // 3. リーチ
+    await wait(450);
+    const band = cutIn('リーチ', shown);
+    sfx.sample?.('sfx-cutin', { gain: 1 });
+    sfx.sample?.('voice-reach', { gain: 1.35, at: 0.18 });
+    await band.enter();
+    vibrate(80);
+    await wait(1100);
+    await band.leave();
+
+    // 4. 左 → 右と止まり、真ん中は1コマずつ粘る
+    await wait(250);
+    const hours = Math.min(9, Number(values[0]));
+    await reels.stop(0, hours);
+    sfx.sample?.('sfx-stop', { gain: 1 });
+    await wait(550);
+    await reels.stop(2, Number(values[2]));
+    sfx.sample?.('sfx-stop', { gain: 1 });
+    reels.setReach(1, true);
+    rays.alpha = 0.14;
+    ringSpeed = 1.1;
+    ringAlpha = 0.25;
+    if (tier >= 2) { sfx.sample?.('sfx-heartbeat', { gain: 0.9 }); beat(shown, 0.5); }
+    await reels.slow(1, 1100);
+
+    const target = Number(values[1]);
+    const stopAt = tier >= 2 ? (target + 9) % 10 : target; // 赤以上は1コマ手前で止めて見せる
+    const lastBeforePush = withPush && shown < tier ? tier - 1 : tier;
+    let ups = lastBeforePush - shown;
+    let count = 0;
+    let ms = 150;
+    for (;;) {
+      const d = await reels.step(1, ms);
+      sfx.sample?.('sfx-tick', { gain: 0.9 });
+      count += 1;
+      ms = Math.min(ms * 1.13, 520);
+      camZoom = 1 + Math.min(0.1, count * 0.008);
+      if (ups > 0 && count % 2 === 0) { upgrade(shown + 1, reels.center(1)); ups -= 1; }
+      if (count >= 6 && ups === 0 && d === stopAt) break;
+    }
+    sfx.sample?.('sfx-stop', { gain: 1 });
+    if (tier >= 2) {
+      // 止まった…？ 無音で待ってから、すべって揃う
+      reels.setReach(1, false);
+      await wait(950);
+      await reels.step(1, 110);
+      sfx.sample?.('sfx-stop', { gain: 1 });
+      sfx.sample?.('sfx-upgrade', { gain: 0.9 });
+      strobe(shown, 4);
+      hitStop = 90;
+      shakeAmp = 30;
+      const at = reels.center(1);
+      shockAt(at.x, at.y, 40);
+      vibrate(80);
+    }
+    reels.setReach(1, false);
+    await wait(650);
+    tween(camState, { zoom: 1 }, 300);
+    await reels.hide();
+
+    // 5〜8. 押せ！ → 無音の暗転 → 結果
+    await run({ ...opts, shown });
+  }
+
   async function run({ tier, shown, withPush, sub, sfx, wait, waitTap, vibrate, onUpgrade }) {
     let current = shown;
     setColor(current);
@@ -625,7 +1020,8 @@ export async function createFinale(root) {
   }
 
   return {
-    run,
+    start,
+    stop,
     destroy() {
       destroyed = true;
       timers.forEach(clearTimeout);

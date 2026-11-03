@@ -161,6 +161,9 @@ function write(name, buffers, { verb, tail = 0 } = {}) {
 
 // ---- 音 ----
 
+const filteredWhoosh = filtered(() => noise(), 'band', (t) => 400 * 15 ** Math.min(1, t / 0.24), 1.5);
+const filteredCrash = filtered(() => noise(), 'high', 5000, 0.5);
+
 // 押せ！の間ずっと上がり続ける溜め（6秒）
 {
   const out = track(6.2);
@@ -201,6 +204,79 @@ function write(name, buffers, { verb, tail = 0 } = {}) {
   addTo(out, 0.005, (t) => filteredNoiseHigh(t) * Math.exp(-t * 1.8) * 0.5, 2.5, -0.4);
   addTo(out, 0.012, (t) => filteredNoiseHigh2(t) * Math.exp(-t * 1.7) * 0.5, 2.5, 0.4);
   write('sfx-impact', out, { verb: { wet: 0.35, room: 0.88 } });
+}
+
+// リールが止まる「カシャン」
+{
+  const out = track(0.6);
+  addTo(out, 0, filtered(() => noise(), 'high', 3000), 0.025);
+  addTo(out, 0, (t) => Math.sin(TAU * (150 * (1 + Math.exp(-t * 60))) * t) * Math.exp(-t * 30) * 0.8, 0.2);
+  addTo(out, 0.01, (t) => (Math.sin(TAU * 2200 * t) + 0.5 * Math.sin(TAU * 3300 * t)) * Math.exp(-t * 14) * 0.18, 0.4);
+  write('sfx-stop', out, { verb: { wet: 0.15, room: 0.6 } });
+}
+
+// 1コマ送りの「カチッ」
+{
+  const out = track(0.12);
+  addTo(out, 0, filtered(() => noise(), 'band', 2500, 3), 0.02);
+  addTo(out, 0, (t) => Math.sin(TAU * 900 * t) * Math.exp(-t * 80) * 0.5, 0.08);
+  write('sfx-tick', out);
+}
+
+// カットイン：風を切る音から着弾
+{
+  const out = track(1.4);
+  addTo(out, 0, (t) => filteredWhoosh(t) * Math.min(1, t / 0.22) ** 2, 0.26);
+  addTo(out, 0.24, (t) => Math.sin(TAU * (40 + 90 * Math.exp(-t * 10)) * t) * Math.exp(-t * 3.5) * 1.0, 1.1);
+  addTo(out, 0.24, filtered(() => noise(), 'low', (t) => 300 + 5000 * Math.exp(-t * 14)), 0.5);
+  addTo(out, 0.245, (t) => filteredCrash(t) * Math.exp(-t * 3) * 0.35, 1.1);
+  write('sfx-cutin', out, { verb: { wet: 0.3, room: 0.85 } });
+}
+
+// 昇格：駆け上がるベル
+{
+  const out = track(1.6);
+  shimmer(out, 0, [72, 76, 79, 84, 88, 91, 96], 0.045, 0.11);
+  [72, 76, 79, 84].forEach((n, i) => brass(out, i * 0.045, n + 12, 0.05, { gain: 0.05, bright: 1.5 }));
+  write('sfx-upgrade', out, { verb: { wet: 0.3 } });
+}
+
+// 心音
+{
+  const out = track(1.0);
+  for (const at of [0, 0.28]) {
+    addTo(out, at, (t) => Math.sin(TAU * (48 + 40 * Math.exp(-t * 25)) * t) * Math.exp(-t * 9) * (at ? 0.75 : 1), 0.5);
+  }
+  write('sfx-heartbeat', out, { verb: { wet: 0.12, room: 0.5 } });
+}
+
+// 再変動の「キュイン」
+{
+  const out = track(1.2);
+  let ph = 0;
+  addTo(out, 0, (t) => {
+    ph += TAU * (300 * 8 ** Math.min(1, t / 0.35)) / SR;
+    let v = 0;
+    for (let h = 1; h < 10; h += 1) v += Math.sin(ph * h) / h;
+    return v * 0.25 * Math.min(1, t / 0.02) * (t < 0.35 ? 1 : Math.exp(-(t - 0.35) * 12));
+  }, 0.7);
+  shimmer(out, 0.33, [96, 100, 103, 108], 0.04, 0.1);
+  write('sfx-respin', out, { verb: { wet: 0.25 } });
+}
+
+// 研究スタート：上昇する音から明るい和音
+{
+  const out = track(2.2);
+  addTo(out, 0, filtered(() => noise(), 'band', (t) => 400 * 12 ** Math.min(1, t / 0.45), 3), 0.5);
+  let ph = 0;
+  addTo(out, 0, (t) => {
+    ph += TAU * (220 * 8 ** Math.min(1, t / 0.45)) / SR;
+    return Math.sin(ph) * 0.2 * Math.min(1, t / 0.45);
+  }, 0.47);
+  chord(out, 0.45, [60, 64, 67, 72, 76], 0.5, { gain: 0.12, bright: 1.4 });
+  drum(out, 0.45, { gain: 0.8 });
+  shimmer(out, 0.5, [84, 88, 91, 96, 100, 103]);
+  write('sfx-start', out, { verb: { wet: 0.3, room: 0.82 } });
 }
 
 // 色ごとのファンファーレ（ハ長調）
