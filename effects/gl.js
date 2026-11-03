@@ -11,6 +11,19 @@ export function loadGL() {
   return modules;
 }
 
+// 映像素材（media/*.mp4、LOOP EFFECTS）。丸ごと読み込んでから再生する（iPhone の部分読み込みとオフライン用のキャッシュが両立しないため）
+const mediaUrls = new Map();
+
+export function preloadMedia(names) {
+  for (const name of names) {
+    if (mediaUrls.has(name)) continue;
+    mediaUrls.set(name, fetch(`media/${name}.mp4`)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.status))))
+      .then((blob) => URL.createObjectURL(blob))
+      .catch(() => { mediaUrls.delete(name); return null; }));
+  }
+}
+
 const FONT = '"Dela Gothic One", "Hiragino Sans", sans-serif';
 // 演出で使う文字。index.html で読み込む書体の文字と合わせる
 const GLYPHS = '押せ！おつかれさまナイス研究激アツ大当たり超リーチ再変動×スタート日連続0123456789分時間突破チャンス昇格結果発表合計月週STEP∞RUSHOND,全回転確定獲得発入中';
@@ -479,6 +492,8 @@ export async function createGL(root) {
     rays.tint = TIER_COLOR[tier];
     rays2.tint = tier === 4 ? 0xffffff : TIER_COLOR[tier];
     for (const r of rings) r.tint = TIER_COLOR[tier];
+    ledColors(tier);
+    if (vidBg.visible && vidBgTier !== 4) { vidBgTier = tier; tintVidBg(); }
   };
 
   // ---- 中心で脈打つ光（心音に合わせる） ----
@@ -495,6 +510,220 @@ export async function createGL(root) {
     core.scale.set(coreBase() * (1 + 0.3 * strength));
     tween(core, { alpha: 0.12 }, 450);
     tween(core.scale, { x: coreBase(), y: coreBase() }, 450);
+  };
+
+  // ---- 映像 ----
+  const pause = (ms) => new Promise((resolve) => { later(resolve, ms); });
+  const clips = new Set();
+  // 再生できる映像のテクスチャ。timeout までに用意できなければ null（映像なしで進める）
+  async function clip(name, { loop = false, timeout = 1500 } = {}) {
+    preloadMedia([name]);
+    const giveUp = new Promise((resolve) => { later(() => resolve(null), timeout); });
+    const url = await Promise.race([mediaUrls.get(name), giveUp]);
+    if (!url || destroyed) return null;
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.loop = loop;
+    video.src = url;
+    const ready = new Promise((resolve) => {
+      video.addEventListener('canplay', () => resolve(true), { once: true });
+      video.addEventListener('error', () => resolve(false), { once: true });
+    });
+    if (!(await Promise.race([ready, giveUp])) || destroyed) { video.removeAttribute('src'); return null; }
+    const source = new PIXI.VideoSource({ resource: video, autoPlay: true, loop });
+    const texture = new PIXI.Texture({ source });
+    const c = {
+      texture,
+      video,
+      ended: new Promise((resolve) => video.addEventListener('ended', resolve, { once: true })),
+      destroy() {
+        if (!clips.delete(c)) return;
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        texture.destroy(true);
+      },
+    };
+    clips.add(c);
+    video.play().catch(() => {});
+    return c;
+  }
+  // 画面いっぱいに広げる（はみ出したぶんは切れる）
+  const cover = (sprite, k = 1) => {
+    const t = sprite.texture;
+    sprite.scale.set(Math.max(W() / t.width, H() / t.height) * k);
+    sprite.position.set(W() / 2, H() / 2);
+  };
+
+  // 背景の映像。青〜金は白黒にしてから色を付け、虹はそのまま
+  const vidBg = new PIXI.Sprite(PIXI.Texture.EMPTY);
+  vidBg.anchor.set(0.5);
+  vidBg.visible = false;
+  // 映像はとても明るいので、暗くしてから発光をかける（白く飛ばないように）
+  const vidGray = new PIXI.ColorMatrixFilter();
+  vidGray.desaturate();
+  vidGray.brightness(0.6, true);
+  const vidDim = new PIXI.ColorMatrixFilter();
+  vidDim.brightness(0.55, false);
+  bgLayer.addChildAt(vidBg, 1);
+  let vidBgClip = null;
+  let vidBgTier = 0;
+  let vidBgAlpha = 0.75;
+  const tintVidBg = () => {
+    vidBg.filters = [vidBgTier === 4 ? vidDim : vidGray];
+    vidBg.tint = vidBgTier === 4 ? 0xffffff : TIER_COLOR[vidBgTier];
+  };
+  async function videoBg(name, tier, alpha = 0.75) {
+    vidBgTier = tier;
+    vidBgAlpha = alpha;
+    if (vidBgClip?.name !== name) {
+      const c = await clip(name, { loop: true });
+      if (!c) return;
+      vidBgClip?.destroy();
+      vidBgClip = c;
+      c.name = name;
+      vidBg.texture = c.texture;
+      cover(vidBg, 1.15);
+    }
+    tintVidBg();
+    vidBg.visible = true;
+    vidBg.alpha = 0;
+    tween(vidBg, { alpha }, 300);
+  }
+  const hideVideoBg = () => { vidBg.visible = false; };
+
+  // ロゴの映像（激熱・確定など）。横長の映像を、ぼかして広げた同じ映像の上に、横幅いっぱいで出す
+  // ready：先に作っておいた映像（clip() の戻り値の Promise）。出す瞬間に読み込み始めると映らない端末がある
+  async function logoClip(name, ms, ready = null) {
+    const c = await (ready ?? clip(name, { timeout: 900 }));
+    if (!c) return false;
+    c.video.currentTime = 0;
+    c.video.play().catch(() => {});
+    const box = new PIXI.Container();
+    const back = new PIXI.Sprite(c.texture);
+    back.anchor.set(0.5);
+    cover(back, 1.1);
+    back.filters = [new PIXI.BlurFilter({ strength: 18, quality: 3 })];
+    back.alpha = 0.85;
+    const front = new PIXI.Sprite(c.texture);
+    front.anchor.set(0.5);
+    const fit = (W() * 1.08) / c.texture.width;
+    front.scale.set(fit * 1.6);
+    front.position.set(W() / 2, H() * 0.42);
+    back.tint = 0x888888;
+    box.addChild(back, front);
+    fgLayer.addChild(box);
+    const bloomBefore = bloom.bloomScale;
+    bloom.bloomScale = 0.25; // ロゴの絵がにじまないように
+    tween(front.scale, { x: fit, y: fit }, 220, easeOut);
+    zoom.center = { x: W() / 2, y: H() * 0.42 };
+    zoom.strength = 0.35;
+    tween(zoom, { strength: 0 }, 500);
+    await pause(ms);
+    await tween(box, { alpha: 0 }, 180);
+    bloom.bloomScale = bloomBefore;
+    box.destroy({ children: true });
+    c.destroy();
+    return true;
+  }
+
+  // ロゴの映像を先に作って止めておく（logoClip の ready に渡す）
+  const readyLogo = (name) => {
+    const ready = clip(name, { timeout: 5000 });
+    ready.then((c) => c?.video.pause());
+    return ready;
+  };
+
+  // 一度だけ流す光や爆発（黒い背景は加算で消える）
+  // ms を渡すと、そこで消す（ほかの演出に重ならないように）
+  async function fxClip(name, { x = W() / 2, y = H() / 2, size = Math.hypot(W(), H()), alpha = 1, layer = topLayer, ms = 0 } = {}) {
+    const c = await clip(name, { timeout: 600 });
+    if (!c) return;
+    const sprite = new PIXI.Sprite(c.texture);
+    sprite.anchor.set(0.5);
+    sprite.blendMode = 'add';
+    sprite.alpha = alpha;
+    sprite.position.set(x, y);
+    sprite.scale.set(size / c.texture.width);
+    layer.addChild(sprite);
+    await Promise.race([c.ended, pause(ms || c.video.duration * 1000 + 200 || 6000)]);
+    if (ms) await tween(sprite, { alpha: 0 }, 200);
+    sprite.destroy();
+    c.destroy();
+  }
+
+  // ---- 台枠の電飾：画面のふちの金属の枠に玉が並び、BGM の拍で色が回る ----
+  const cabinet = new PIXI.Container();
+  const rim = 9;
+  const frameFill = new PIXI.FillGradient({
+    type: 'linear', start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, textureSpace: 'local',
+    colorStops: [{ offset: 0, color: '#f5f7fa' }, { offset: 0.3, color: '#5b616b' }, { offset: 0.5, color: '#ffffff' }, { offset: 0.7, color: '#4a4f58' }, { offset: 1, color: '#e9edf2' }],
+  });
+  cabinet.addChild(new PIXI.Graphics()
+    .rect(0, 0, W(), H()).fill(frameFill)
+    .roundRect(rim, rim, W() - rim * 2, H() - rim * 2, 18)
+    .cut());
+  const ledPoints = [];
+  const step = 26;
+  for (let x = rim * 2; x < W() - rim; x += step) ledPoints.push([x, rim / 2], [W() - x, H() - rim / 2]);
+  for (let y = rim * 2; y < H() - rim; y += step) ledPoints.push([W() - rim / 2, y], [rim / 2, H() - y]);
+  const leds = ledPoints.map(([x, y]) => {
+    const led = new PIXI.Sprite(tx.dot);
+    led.anchor.set(0.5);
+    led.blendMode = 'add';
+    led.position.set(x, y);
+    led.width = led.height = 30;
+    cabinet.addChild(led);
+    return led;
+  });
+  cabinet.visible = false;
+  app.stage.addChildAt(cabinet, 1); // カメラの揺れに付いていかない（台は揺れない）
+  let ledPalette = [TIER_COLOR[0], 0xffffff];
+  let chase = 0;
+  let ledGlow = 0;
+  let beatSfx = null;
+  let beatAvg = 0;
+  let lastBeat = 0;
+  let beatClock = 0;
+  const onBeat = () => {
+    chase += 1;
+    ledGlow = 1;
+    if (vidBg.visible) vidBg.alpha = Math.min(1, vidBgAlpha + 0.25);
+  };
+  updaters.add((dt) => {
+    const now = performance.now();
+    const level = beatSfx?.level?.();
+    if (level != null) {
+      beatAvg = beatAvg * 0.92 + level * 0.08;
+      if (level > beatAvg * 1.15 && level > 0.3 && now - lastBeat > 200) { lastBeat = now; onBeat(); }
+    } else {
+      beatClock += dt;
+      if (beatClock > 400) { beatClock = 0; onBeat(); } // 音なしのときは1分に150拍
+    }
+    ledGlow *= 0.9 ** (dt / 16);
+    if (vidBg.visible) vidBg.alpha += (vidBgAlpha - vidBg.alpha) * Math.min(1, dt / 120);
+    if (!cabinet.visible) return;
+    const n = ledPalette.length;
+    leds.forEach((led, i) => {
+      led.tint = ledPalette[(i + chase) % n];
+      led.alpha = 0.55 + 0.45 * ledGlow;
+    });
+  });
+  const ledColors = (tier) => {
+    ledPalette = tier === 4 ? RAINBOW.map((c) => Number.parseInt(c.slice(1), 16)) : [TIER_COLOR[tier], 0xffffff, TIER_COLOR[tier], TIER_LIGHT[tier]];
+  };
+
+  // ---- BGM（魔王魂）。場面ごとに1曲だけ鳴らす ----
+  let music = null;
+  const playMusic = (name) => { music?.stop(0.2); music = beatSfx?.bgm?.(name) ?? null; };
+  const stopMusic = (out = 0.3) => { music?.stop(out); music = null; };
+  // 場面の始まり：拍を取る音と、台枠
+  const enter = (sfx, tier) => {
+    beatSfx = sfx;
+    ledColors(tier);
+    cabinet.visible = true;
   };
 
   const strobe = (tier, n, gap = 75) => {
@@ -911,6 +1140,8 @@ export async function createGL(root) {
     crack.width = crack.height = Math.hypot(W(), H()) * 1.1;
     crack.rotation = rand(0, Math.PI * 2);
     topLayer.addChild(crack);
+    fxClip('fx-blast', { y: y + size * 0.3, size: Math.hypot(W(), H()) * 1.3, ms: 1800 });
+    fxClip('fx-smoke', { y: y + size * 0.35, size: W() * 1.8, alpha: 0.6, layer: fxLayer, ms: 2200 });
     sfx.sample?.('sfx-impact', { gain: 1, rate: 0.75 });
     sfx.sample?.('sfx-stop', { gain: 1, rate: 1.8, at: 0.03 });
     sfx.sample?.('voice-kita', { gain: 1.4, at: 0.2 });
@@ -928,7 +1159,7 @@ export async function createGL(root) {
   }
 
   // ---- 出玉：研究時間を玉の数にしてカウントアップする。赤以上はラウンドも ----
-  async function payout(tier, minutes, sfx, wait) {
+  async function payout(tier, minutes, sfx, wait, bonusReady) {
     const balls = minutes * 100;
     const rounds = tier >= 2 ? Math.min(16, Math.max(1, Math.ceil(minutes / 15))) : 0;
     const pw = Math.min(W() * 0.86, 440);
@@ -946,6 +1177,13 @@ export async function createGL(root) {
       .fill({ color: 0x000000, alpha: 0.65 })
       .stroke({ color: TIER_COLOR[tier], width: 3 });
 
+    if (tier >= 3) {
+      doFlash(0xffffff, 0.9, 300);
+      shakeAmp = 24;
+      strobe(tier, 8);
+      sfx.sample?.('sfx-impact', { gain: 0.9 });
+      await logoClip('logo-bonus', 1300, bonusReady);
+    }
     const box = new PIXI.Container();
     const head = new PIXI.Text({ text: '獲得', style: plain(ph * 0.32), resolution: 2 });
     head.anchor.set(0, 0.5);
@@ -1020,6 +1258,8 @@ export async function createGL(root) {
   // ---- 始める ----
   // opts: { origin, streak, tier, sfx, wait, vibrate }
   async function start({ origin, streak, tier, sfx, wait, vibrate }) {
+    enter(sfx, tier);
+    if (streak >= 3) preloadMedia(['bg-rainbow']);
     setColor(tier);
     canvas.style.opacity = '1';
     rays.alpha = 0.28;
@@ -1062,6 +1302,8 @@ export async function createGL(root) {
     black.alpha = 1;
     await wait(280);
     black.alpha = 0;
+    playMusic('bgm-rush');
+    videoBg('bg-rainbow', 4, 0.85);
     setColor(4);
     rays.alpha = 0.45;
     rays2.alpha = 0.3;
@@ -1088,12 +1330,15 @@ export async function createGL(root) {
     await wait(1600);
     title.leave();
     count.leave();
+    stopMusic(0.6);
     await wait(200);
   }
 
   // ---- 記録中の節目 ----
   // opts: { index, label, tier, raised, sfx, wait, vibrate }
   async function milestone({ index, label, tier, raised, sfx, wait, vibrate }) {
+    enter(sfx, tier);
+    videoBg('bg-rainbow', tier, 0.6);
     setColor(tier);
     canvas.style.opacity = '1';
     rays.alpha = 0.3;
@@ -1127,6 +1372,10 @@ export async function createGL(root) {
   // ---- 週の結果発表 ----
   // opts: { title, cols: [{ label, value }], total, tier, sfx, wait, waitTap, vibrate }
   async function weekly({ title, cols, total, tier, sfx, wait, waitTap, vibrate }) {
+    enter(sfx, 0);
+    preloadMedia(['bg-rainbow']);
+    const shoriReady = tier >= 3 ? readyLogo('logo-shori') : null;
+    playMusic('bgm-weekly');
     setColor(0);
     canvas.style.opacity = '1';
     ringAlpha = 0.15;
@@ -1188,8 +1437,15 @@ export async function createGL(root) {
       await wait(250);
     }
 
-    // 合計を発表
+    // 合計を発表。金以上は先に「勝利」
     await wait(500);
+    if (tier >= 3) {
+      doFlash(0xffffff, 1, 300);
+      sfx.sample?.('sfx-impact', { gain: 1 });
+      strobe(tier, 8);
+      await logoClip('logo-shori', 1500, shoriReady);
+    }
+    videoBg('bg-rainbow', tier, 0.7);
     setColor(tier);
     rays.alpha = 0.4;
     rays2.alpha = tier >= 3 ? 0.22 : 0;
@@ -1224,6 +1480,7 @@ export async function createGL(root) {
     fgLayer.addChild(note);
     tween(note, { alpha: 0.9 }, 400);
     await waitTap(7000);
+    stopMusic(0.5);
     sum.leave();
     head.leave();
     await tween(world, { alpha: 0 }, 300);
@@ -1235,6 +1492,14 @@ export async function createGL(root) {
     const { tier, pseudo, withPush, values, sfx, wait, vibrate } = opts;
     let { shown } = opts;
     const rnd = () => Math.floor(Math.random() * 10);
+    enter(sfx, shown);
+    preloadMedia([
+      'bg-rainbow', 'fx-shock', 'fx-flash',
+      ...(opts.gimmick ? ['fx-blast', 'fx-smoke'] : []),
+      ...(tier >= 2 ? ['fx-particle', [0, 0, 'logo-gekiatsu', 'logo-777-red', 'logo-777-rainbow'][tier]] : []),
+      ...(tier >= 3 ? ['logo-bonus'] : []),
+      ...(tier === 4 ? ['logo-kakutei'] : []),
+    ]);
     setColor(shown);
     canvas.style.opacity = '1';
     ringAlpha = 0.06;
@@ -1312,6 +1577,9 @@ export async function createGL(root) {
     sfx.sample?.('sfx-cutin', { gain: 1 });
     sfx.sample?.('voice-reach', { gain: 1.35, at: 0.18 });
     await band.enter();
+    playMusic('bgm-reach');
+    videoBg('bg-rainbow', shown, 0.55);
+    if (tier >= 2) fxClip('fx-particle', { layer: fxLayer, alpha: 0.8, size: Math.max(W(), H()) * 1.8, ms: 7000 });
     vibrate(80);
     await wait(1100);
     await band.leave();
@@ -1380,6 +1648,7 @@ export async function createGL(root) {
 
   // 4'. 全回転（虹のとき）：3つが同じ数字のまま回り、7・7・7で止まる
   async function zenkaiten(reels, lastBeforePush, upgrade, getShown, sfx, wait) {
+    const sureReady = readyLogo('logo-kakutei');
     reels.alignAll();
     sfx.sample?.('sfx-respin', { gain: 1, rate: 1.2 });
     const band = cutIn('全回転', 4, 'kirin');
@@ -1387,11 +1656,12 @@ export async function createGL(root) {
     sfx.sample?.('voice-zenkaiten', { gain: 1.4, at: 0.15 });
     await band.enter();
     strobe(4, 12);
-    rays.alpha = 0.3;
+    rays.alpha = 0.15;
     rays2.alpha = 0.2;
-    ringAlpha = 0.35;
+    ringAlpha = 0.2;
     ringSpeed = 2.4;
     if (getShown() < lastBeforePush) upgrade(lastBeforePush, { x: W() / 2, y: H() * 0.45 });
+    videoBg('bg-rainbow', 4, 0.6);
     await wait(1100);
     await band.leave();
     await wait(700);
@@ -1418,13 +1688,20 @@ export async function createGL(root) {
     sfx.sample?.('sfx-stop', { gain: 1 });
     sfx.sample?.('sfx-impact', { gain: 1 });
     sfx.sample?.('voice-kakutei', { gain: 1.4, at: 0.12 });
-    const sure = await slam('確定', 4, H() * 0.22, H() * 0.1);
-    await wait(1400);
-    sure.leave();
+    reels.set.visible = false;
+    if (!(await logoClip('logo-kakutei', 1800, sureReady))) {
+      reels.set.visible = true;
+      const sure = await slam('確定', 4, H() * 0.22, H() * 0.1);
+      await wait(1400);
+      sure.leave();
+    }
+    reels.set.visible = true;
   }
 
   async function run({ tier, shown, withPush, sub, minutes, sfx, wait, waitTap, vibrate, onUpgrade }) {
     let current = shown;
+    const logoReady = tier >= 2 ? readyLogo([0, 0, 'logo-gekiatsu', 'logo-777-red', 'logo-777-rainbow'][tier]) : null;
+    const bonusReady = tier >= 3 ? readyLogo('logo-bonus') : null;
     setColor(current);
     canvas.style.opacity = '1';
 
@@ -1432,6 +1709,7 @@ export async function createGL(root) {
     if (withPush) {
       ringAlpha = 0.3;
       rays.alpha = 0.12;
+      vidBgAlpha = 0.3; // ボタンが主役。背景の映像は暗く
       const button = new PIXI.Container();
       button.position.set(W() / 2, H() / 2);
       const size = Math.min(W(), H()) * 0.62;
@@ -1497,6 +1775,7 @@ export async function createGL(root) {
         halo.tint = TIER_COLOR[current];
       }
       doFlash(0xffffff, 1, 220);
+      fxClip('fx-shock', { size: Math.max(W(), H()) * 1.6, ms: 900 });
       hitStop = 150;
       shakeAmp = 24;
       shockAt(W() / 2, H() / 2, 50);
@@ -1510,6 +1789,8 @@ export async function createGL(root) {
     }
 
     // ---- 無音の暗転 ----
+    stopMusic(0.02);
+    hideVideoBg();
     black.alpha = 1;
     ringAlpha = 0;
     rays.alpha = 0;
@@ -1532,8 +1813,26 @@ export async function createGL(root) {
     // ---- 結果 ----
     setColor(tier);
     black.alpha = 0;
-    rays.alpha = 0.4;
-    rays2.alpha = tier >= 3 ? 0.22 : 0;
+    camZoom = 1;
+    playMusic('bgm-win');
+    fxClip('fx-flash', { size: Math.hypot(W(), H()) * 1.4, layer: bgLayer, alpha: 0.7, ms: 1500 });
+    // 赤以上は、まず画面いっぱいのロゴ（激熱・777）
+    const logoName = [null, null, 'logo-gekiatsu', 'logo-777-red', 'logo-777-rainbow'][tier];
+    if (logoName) {
+      doFlash(0xffffff, 1, 400);
+      hitStop = 90;
+      shakeAmp = 40;
+      sfx.sample?.('sfx-impact', { gain: 1 });
+      sfx.sample?.(`sfx-fanfare-${tier}`, { gain: 0.95 });
+      sfx.sample?.(`voice-${tier}`, { gain: 1.4, at: 0.15 });
+      strobe(tier, 4);
+      rays.alpha = 0;
+      ringAlpha = 0;
+      await logoClip(logoName, 1500 + tier * 150, logoReady);
+    }
+    videoBg('bg-rainbow', tier, 0.45);
+    rays.alpha = 0.2;
+    rays2.alpha = tier >= 3 ? 0.12 : 0;
     ringAlpha = 0.12;
     ringSpeed = 1.2;
     bg.tint = TIER_COLOR[tier];
@@ -1577,8 +1876,10 @@ export async function createGL(root) {
     shakeAmp = tier >= 2 ? 34 : 16;
     shockAt(W() / 2, H() * 0.45, 60);
     vibrate(tier >= 3 ? [80, 60, 80, 60, 300] : [60]);
-    sfx.sample?.(`sfx-fanfare-${tier}`, { gain: 0.95 });
-    sfx.sample?.(`voice-${tier}`, { gain: 1.4, at: 0.15 });
+    if (!logoName) {
+      sfx.sample?.(`sfx-fanfare-${tier}`, { gain: 0.95 });
+      sfx.sample?.(`voice-${tier}`, { gain: 1.4, at: 0.15 });
+    }
     burst(W() / 2, H() * 0.45, tier, [40, 70, 110, 160, 220][tier], 900 + tier * 150);
     tween(logo.scale, { x: fit, y: fit }, 260, easeBack);
     tween(subBox, { alpha: 1 }, 300);
@@ -1598,12 +1899,13 @@ export async function createGL(root) {
     let t = 0;
     updaters.add((dt) => {
       t += dt;
-      bloom.bloomScale = 0.95 + 0.3 * Math.sin(t / 120);
+      bloom.bloomScale = 0.75 + 0.2 * Math.sin(t / 120);
       logo.rotation = Math.sin(t / 700) * 0.015;
     });
     await wait(1300);
-    await payout(tier, minutes, sfx, wait);
+    await payout(tier, minutes, sfx, wait, bonusReady);
     await wait(500 + tier * 200);
+    stopMusic(0.6);
     await tween(world, { alpha: 0 }, 300);
   }
 
@@ -1615,6 +1917,7 @@ export async function createGL(root) {
     destroy() {
       destroyed = true;
       timers.forEach(clearTimeout);
+      for (const c of [...clips]) c.destroy();
       app.destroy({ removeView: true }, { children: true, texture: true });
       for (const t of Object.values(tx)) t.destroy(true);
     },

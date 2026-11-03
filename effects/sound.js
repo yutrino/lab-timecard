@@ -10,6 +10,7 @@ export const SAMPLES = [
   'sfx-fanfare-0', 'sfx-fanfare-1', 'sfx-fanfare-2', 'sfx-fanfare-3', 'sfx-fanfare-4',
   'voice-push', 'voice-reach', 'voice-start', 'voice-chance', 'voice-weekly',
   'voice-rush', 'voice-zenkaiten', 'voice-kakutei', 'voice-kita', 'voice-stepup', 'voice-round',
+  'bgm-reach', 'bgm-win', 'bgm-rush', 'bgm-weekly',
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => `voice-m${i}`), 'voice-0', 'voice-1', 'voice-2', 'voice-3', 'voice-4',
 ];
 
@@ -17,6 +18,10 @@ export function createSound() {
   let ac = null;
   let master = null;
   const buffers = new Map();
+  // BGM の低音の大きさを測り、電飾を拍に合わせる
+  let analyser = null;
+  let bins = null;
+  const bgms = new Set(); // 鳴っている BGM
   const loading = new Map();
 
   function load(name) {
@@ -41,6 +46,16 @@ export function createSound() {
       master = ac.createGain();
       master.gain.value = 0.8;
       master.connect(ac.destination);
+    }
+    if (!analyser) {
+      analyser = ac.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.3;
+      bins = new Uint8Array(analyser.frequencyBinCount);
+      // どこかに出力をつながないと測れない端末があるので、音量0でつなぐ
+      const mute = ac.createGain();
+      mute.gain.value = 0;
+      analyser.connect(mute).connect(ac.destination);
     }
     return ac;
   }
@@ -109,8 +124,43 @@ export function createSound() {
       };
     },
 
+    // BGM を繰り返し鳴らす。読み込み前なら鳴らさない
+    bgm(name, { gain = 0.55, fade = 0.15 } = {}) {
+      const buffer = buffers.get(name);
+      const a = context();
+      if (!buffer || !a) { load(name); return null; }
+      const src = a.createBufferSource();
+      const g = a.createGain();
+      src.buffer = buffer;
+      src.loop = true;
+      g.gain.setValueAtTime(0.0001, a.currentTime);
+      g.gain.exponentialRampToValueAtTime(gain, a.currentTime + fade);
+      src.connect(g).connect(master);
+      g.connect(analyser);
+      src.start();
+      const handle = {
+        stop(out = 0.3) {
+          if (!bgms.delete(handle)) return;
+          g.gain.setTargetAtTime(0, a.currentTime, out / 3);
+          src.stop(a.currentTime + out * 2);
+        },
+      };
+      bgms.add(handle);
+      return handle;
+    },
+
+    // BGM の低音の大きさ（0〜1）。BGM が鳴っていなければ null
+    level() {
+      if (!analyser || !bgms.size) return null;
+      analyser.getByteFrequencyData(bins);
+      let sum = 0;
+      for (let i = 1; i <= 6; i += 1) sum += bins[i]; // 約40〜260Hz（バスドラム）
+      return sum / (6 * 255);
+    },
+
     // 鳴っている音をすぐ止める（演出を飛ばしたとき）
     cut() {
+      for (const handle of [...bgms]) handle.stop(0.02);
       if (!master) return;
       master.gain.setTargetAtTime(0, ac.currentTime, 0.02);
       const old = master;

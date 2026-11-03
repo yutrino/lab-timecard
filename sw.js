@@ -1,5 +1,7 @@
 // 電波がなくても開けるようにする。キャッシュを先に返し、裏で新しい版に入れ替える。
-const CACHE = 'timecard-v9';
+// 映像（media/）と BGM は大きいので最初には入れず、一度使ったものだけが残る。
+const CACHE = 'timecard-v10';
+const MEDIA_CACHE = 'timecard-media'; // 版を上げても消さない
 const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'logic.js',
   'effects/director.js', 'effects/particles.js', 'effects/sound.js', 'effects/effects.css', 'effects/gl.js', 'effects/patterns.js',
@@ -20,17 +22,20 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== MEDIA_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET' || new URL(request.url).origin !== location.origin) return;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== location.origin) return;
+  const media = /\/(media\/|sounds\/bgm-)/.test(url.pathname);
   event.respondWith(
-    caches.open(CACHE).then(async (cache) => {
+    caches.open(media ? MEDIA_CACHE : CACHE).then(async (cache) => {
       const cached = await cache.match(request, { ignoreSearch: true });
+      if (media && cached) return cached; // 素材は変わらないので取り直さない
       const fresh = fetch(request)
         .then((response) => {
           if (response.ok) cache.put(request, response.clone());

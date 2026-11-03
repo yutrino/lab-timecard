@@ -4,7 +4,7 @@
 import { formatDuration } from '../logic.js';
 import { createParticles } from './particles.js';
 import { createSound } from './sound.js';
-import { createGL, loadGL } from './gl.js';
+import { createGL, loadGL, preloadMedia } from './gl.js';
 
 const TIERS = ['blue', 'green', 'red', 'gold', 'rainbow'];
 const RESULT_TEXT = ['おつかれさま！', 'ナイス研究！', '激アツ！', '大当たり！', '超大当たり！！'];
@@ -35,7 +35,10 @@ export function warmUp(settings) {
   if (!settings.on) return;
   if (settings.sound) sound.preload();
   const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1500));
-  idle(() => { loadGL().catch(() => {}); });
+  idle(() => {
+    loadGL().catch(() => {});
+    preloadMedia(['bg-rainbow', 'fx-flash', 'fx-shock']); // どの色でも使う映像だけ。残りは演出が始まってから読む
+  });
 }
 
 export const effectPlaying = () => current != null;
