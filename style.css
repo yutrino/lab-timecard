@@ -80,12 +80,73 @@ body[data-heat]::before {
 }
 @keyframes heat-pulse { 50% { box-shadow: inset 0 0 4.5rem var(--heat-glow); } }
 
+.heat[hidden] { display: none; }
 .heat {
   margin-top: 0.25rem;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   font-weight: 700;
   color: var(--muted);
 }
+
+/* 保留の玉。記録中の色を表し、色が上がるとはじける */
+.hold {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  --ball: #3b82f6;
+  background:
+    radial-gradient(circle at 34% 30%, #fff 0 8%, rgb(255 255 255 / 0.6) 16%, transparent 42%),
+    radial-gradient(circle at 50% 50%, transparent 55%, rgb(0 0 0 / 0.35) 100%),
+    var(--ball);
+  box-shadow: 0 0 0.6rem var(--ball);
+}
+.hold[data-tier="1"] { --ball: #22c55e; }
+.hold[data-tier="2"] { --ball: #ff2d3f; }
+.hold[data-tier="3"] { --ball: #ffb300; }
+.hold[data-tier="4"] {
+  --ball: #ff4fd8;
+  background:
+    radial-gradient(circle at 34% 30%, #fff 0 8%, rgb(255 255 255 / 0.6) 16%, transparent 42%),
+    radial-gradient(circle at 50% 50%, transparent 55%, rgb(0 0 0 / 0.35) 100%),
+    var(--kirin, #e0a030) center / 2.4rem;
+  animation: hold-glow 1.2s linear infinite;
+}
+@keyframes hold-glow {
+  0% { box-shadow: 0 0 0.7rem #ff3b3b; } 25% { box-shadow: 0 0 0.7rem #ffe600; }
+  50% { box-shadow: 0 0 0.7rem #2ee66b; } 75% { box-shadow: 0 0 0.7rem #2fa8ff; } 100% { box-shadow: 0 0 0.7rem #ff3b3b; }
+}
+.hold.change { animation: hold-change 0.9s cubic-bezier(.2,.9,.3,1.4); }
+@keyframes hold-change {
+  0% { transform: scale(1); filter: brightness(1); }
+  15% { transform: scale(0.6) rotate(-20deg); filter: brightness(3); }
+  30% { transform: scale(1.9) rotate(15deg); filter: brightness(2.2); box-shadow: 0 0 2rem 0.6rem var(--ball); }
+  60% { transform: scale(0.9) rotate(-6deg); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+/* 研究RUSH */
+.rush {
+  margin-top: 0.4rem;
+  text-align: center;
+  font-family: "Dela Gothic One", "Hiragino Sans", sans-serif;
+  font-style: italic;
+  font-size: 1.125rem;
+  color: var(--muted);
+}
+body[data-rush] .rush {
+  font-size: 1.375rem;
+  background: linear-gradient(90deg, #ff3b3b, #ffb000, #ffe600, #2ee66b, #2fa8ff, #8b5cff, #ff4fd8, #ff3b3b) 0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-stroke: 0.5px rgb(0 0 0 / 0.35);
+  animation: rush-flow 1.6s linear infinite;
+}
+@keyframes rush-flow { to { background-position: 200% 0; } }
 
 main {
   max-width: 28rem;
@@ -335,6 +396,6 @@ input, select {
 
 @media (prefers-reduced-motion: reduce) {
   body { transition: none; }
-  body[data-heat="4"], body[data-heat]::before { animation: none; }
+  body[data-heat="4"], body[data-heat]::before, .hold, body[data-rush] .rush { animation: none; }
   .punch:active { transform: none; }
 }

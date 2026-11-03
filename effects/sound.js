@@ -1,4 +1,4 @@
-// 効果音はすべて Web Audio で合成する（音源ファイルなし）。
+// 音は書き出し済みの mp3（sounds/）を Web Audio で鳴らす。読み込めないときのために合成音も持つ。
 // AudioContext はボタンを押した操作の中で作らないと、iPhone では鳴らない。
 
 const C5 = 523.25;
@@ -9,6 +9,7 @@ export const SAMPLES = [
   'sfx-riser', 'sfx-push', 'sfx-impact', 'sfx-stop', 'sfx-tick', 'sfx-cutin', 'sfx-upgrade', 'sfx-heartbeat', 'sfx-respin', 'sfx-start', 'sfx-drumroll',
   'sfx-fanfare-0', 'sfx-fanfare-1', 'sfx-fanfare-2', 'sfx-fanfare-3', 'sfx-fanfare-4',
   'voice-push', 'voice-reach', 'voice-start', 'voice-chance', 'voice-weekly',
+  'voice-rush', 'voice-zenkaiten', 'voice-kakutei', 'voice-kita', 'voice-stepup', 'voice-round',
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => `voice-m${i}`), 'voice-0', 'voice-1', 'voice-2', 'voice-3', 'voice-4',
 ];
 
@@ -88,14 +89,15 @@ export function createSound() {
       return Promise.all(SAMPLES.map(load));
     },
 
-    // 読み込み済みの音を鳴らす。まだなら読み込みだけ始めて今回は鳴らさない
-    sample(name, { gain = 1, at = 0 } = {}) {
+    // 読み込み済みの音を鳴らす。まだなら読み込みだけ始めて今回は鳴らさない。rate で速さと高さが変わる
+    sample(name, { gain = 1, at = 0, rate = 1 } = {}) {
       const buffer = buffers.get(name);
       const a = context();
       if (!buffer || !a) { load(name); return null; }
       const src = a.createBufferSource();
       const g = a.createGain();
       src.buffer = buffer;
+      src.playbackRate.value = rate;
       g.gain.value = gain;
       src.connect(g).connect(master);
       src.start(a.currentTime + at);

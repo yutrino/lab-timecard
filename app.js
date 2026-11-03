@@ -4,6 +4,7 @@ import {
   nextTier, milestoneIndex, milestoneLabel, milestoneRaisesTier, weekTierFor,
 } from './logic.js';
 import { playEffect, warmUp, effectPlaying } from './effects/director.js';
+import { patternCanvas } from './effects/patterns.js';
 
 const SESSIONS_KEY = 'timecard.sessions';
 const SYNC_URL_KEY = 'timecard.syncUrl';
@@ -30,6 +31,7 @@ let syncAgain = false;
 let syncTimer = null;
 let syncState = { failed: false, at: null };
 let fxSettings = loadFxSettings();
+let heldTier = null; // 保留の玉の色。変わった瞬間だけ玉を揺らす
 
 // ---- 保存 ----
 
@@ -133,6 +135,7 @@ function render() {
 
   document.body.toggleAttribute('data-running', Boolean(open));
   renderHeat(open, now);
+  renderRush(open, now, today);
   setText('todayTotal', formatDuration(totals(sessions, today, addDays(today, 1), now).all));
   setText('weekTotal', formatDuration(totals(sessions, thisWeek.start, thisWeek.end, now).all));
   setText('punch', open ? '研究を止める' : '研究を始める');
@@ -157,6 +160,7 @@ function renderHeat(open, now) {
   if (!open || !fxSettings.on) {
     delete document.body.dataset.heat;
     heat.hidden = true;
+    heldTier = null;
     return;
   }
   const elapsed = now - open.start;
@@ -164,8 +168,30 @@ function renderHeat(open, now) {
   document.body.dataset.heat = String(tier);
   const next = nextTier(elapsed);
   const rest = next ? `（${TIER_COLOR_NAME[next.tier]}まであと${formatDuration(next.remaining + 59999)}）` : '';
-  setText('heat', `いま：${HEAT_NAME[tier]}${rest}`);
+  setText('heatText', `いま：${HEAT_NAME[tier]}${rest}`);
   heat.hidden = false;
+  // 保留変化：色が上がった瞬間に玉がはじける
+  const hold = $('hold');
+  hold.dataset.tier = String(tier);
+  if (heldTier != null && tier > heldTier) {
+    hold.classList.remove('change');
+    void hold.offsetWidth;
+    hold.classList.add('change');
+  }
+  heldTier = tier;
+}
+
+// 3日以上続けて記録すると研究RUSH。続けられる日は、あと少しで続くことを見せる
+function renderRush(open, now, today) {
+  const rush = $('rush');
+  const streak = streakDays(sessions, now);
+  const before = streak === 0 ? streakDays(sessions, addDays(today, -1)) : 0;
+  let text = '';
+  if (fxSettings.on && streak >= 3) text = `研究RUSH ${streak}連チャン中`;
+  else if (fxSettings.on && !open && before >= 2) text = `きょう始めれば研究RUSH ${before + 1}連チャン`;
+  setText('rush', text);
+  rush.hidden = !text;
+  document.body.toggleAttribute('data-rush', fxSettings.on && streak >= 3);
 }
 
 function renderWeek(now, today) {
@@ -572,6 +598,9 @@ function importSyncFromHash() {
 }
 
 // ---- 起動 ----
+
+// 保留の玉のキリン柄
+try { document.documentElement.style.setProperty('--kirin', `url(${patternCanvas('kirin', 96).toDataURL()})`); } catch { /* 柄なしでも動く */ }
 
 importSyncFromHash();
 warmUp(fxSettings);

@@ -1,6 +1,8 @@
 // 演出の舞台を WebGL（PixiJS）で描く。始める演出と、止める演出の全段階。
 // 発光（ブルーム）、衝撃波のゆがみ、ズームブラー、カメラの寄り引き、当たる瞬間の一瞬の静止（ヒットストップ）を使う。
 
+import { patternCanvas } from './patterns.js';
+
 let modules = null;
 
 export function loadGL() {
@@ -10,6 +12,8 @@ export function loadGL() {
 }
 
 const FONT = '"Dela Gothic One", "Hiragino Sans", sans-serif';
+// 演出で使う文字。index.html で読み込む書体の文字と合わせる
+const GLYPHS = '押せ！おつかれさまナイス研究激アツ大当たり超リーチ再変動×スタート日連続0123456789分時間突破チャンス昇格結果発表合計月週STEP∞RUSHOND,全回転確定獲得発入中';
 const TIER_COLOR = [0x3b82f6, 0x22c55e, 0xff2d3f, 0xffc400, 0xff4fd8];
 const TIER_DARK = [0x0b2a7a, 0x064d22, 0x5a0010, 0x5a3a00, 0x3a0a6a];
 const TIER_LIGHT = [0x9cc4ff, 0x8dffb8, 0xff9a9a, 0xfff1a8, 0xffffff];
@@ -140,6 +144,55 @@ function makeTextures(PIXI) {
       g.fillStyle = r;
       g.beginPath(); g.ellipse(c, c * 0.62, c * 0.52, c * 0.32, 0, 0, Math.PI * 2); g.fill();
     }),
+    zebra: canvasTexture(PIXI, 256, (g) => g.drawImage(patternCanvas('zebra'), 0, 0)),
+    kirin: canvasTexture(PIXI, 256, (g) => g.drawImage(patternCanvas('kirin'), 0, 0)),
+    // 役物が当たった画面のひび。中心から割れが走り、輪の割れでつながる
+    crack: canvasTexture(PIXI, 1024, (g, s) => {
+      const c = s / 2;
+      const arms = Array.from({ length: 18 }, (_, i) => (i / 18) * Math.PI * 2 + rand(-0.12, 0.12));
+      const at = (a, r) => [c + Math.cos(a) * r, c + Math.sin(a) * r];
+      const paths = arms.map((a) => {
+        const pts = [[c, c]];
+        for (let r = rand(10, 30); r < c * 0.98; r += rand(30, 80)) pts.push(at(a + rand(-0.08, 0.08), r));
+        return pts;
+      });
+      for (const k of [0.1, 0.2, 0.34, 0.52, 0.74]) {
+        arms.forEach((a, i) => {
+          if (Math.random() < 0.35) return;
+          const b = arms[(i + 1) % arms.length] + (i === arms.length - 1 ? Math.PI * 2 : 0);
+          const pts = [];
+          for (let j = 0; j <= 4; j += 1) pts.push(at(a + ((b - a) * j) / 4, c * k * rand(0.92, 1.08)));
+          paths.push(pts);
+        });
+      }
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      for (const [color, width] of [['rgba(0,0,0,0.55)', 7], ['rgba(255,255,255,0.95)', 2.6], ['rgba(200,230,255,0.9)', 1]]) {
+        g.strokeStyle = color;
+        g.lineWidth = width;
+        for (const pts of paths) {
+          g.beginPath();
+          pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+          g.stroke();
+        }
+      }
+      const r = g.createRadialGradient(c, c, 0, c, c, c * 0.12);
+      r.addColorStop(0, 'rgba(255,255,255,0.95)');
+      r.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = r;
+      g.fillRect(0, 0, s, s);
+    }),
+    // パチンコ玉
+    ball: canvasTexture(PIXI, 64, (g, s) => {
+      const c = s / 2;
+      const r = g.createRadialGradient(c * 0.7, c * 0.62, c * 0.05, c, c, c - 1);
+      r.addColorStop(0, '#ffffff');
+      r.addColorStop(0.35, '#d5d9e0');
+      r.addColorStop(0.8, '#5b616b');
+      r.addColorStop(1, '#2a2e35');
+      g.fillStyle = r;
+      g.beginPath(); g.arc(c, c, c - 1, 0, Math.PI * 2); g.fill();
+    }),
     bg: canvasTexture(PIXI, 512, (g, s) => {
       const r = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
       r.addColorStop(0, '#ffffff');
@@ -220,7 +273,7 @@ function metalText(PIXI, FILTERS, renderer, tx, text, tier, size) {
 
 export async function createGL(root) {
   const { PIXI, FILTERS } = await loadGL();
-  await document.fonts.load(`100px ${FONT}`, '押せ！おつかれさまナイス研究激アツ大当たり超リーチ再変動×スタート日連続0123456789分時間突破チャンス昇格結果発表合計月週');
+  await document.fonts.load(`100px ${FONT}`, GLYPHS);
 
   const app = new PIXI.Application();
   await app.init({
@@ -351,6 +404,8 @@ export async function createGL(root) {
         p.sprite.rotation += s * 3;
         p.sprite.scale.set(p.size * 0.35, Math.abs(Math.cos(p.spin)) * p.size * 0.18);
         p.vx += Math.sin(p.spin) * 30 * s;
+      } else if (p.kind === 'ball') {
+        p.sprite.scale.set(p.size);
       } else if (p.kind === 'glint') {
         const g = Math.sin(Math.PI * Math.min(1, p.life / p.max));
         p.sprite.scale.set(g * p.size);
@@ -360,7 +415,7 @@ export async function createGL(root) {
   const spawn = (kind, texture, props, layer = fxLayer) => {
     const sprite = new PIXI.Sprite(texture);
     sprite.anchor.set(0.5);
-    sprite.blendMode = kind === 'coin' || kind === 'confetti' ? 'normal' : 'add';
+    sprite.blendMode = kind === 'coin' || kind === 'confetti' || kind === 'ball' ? 'normal' : 'add';
     if (props.tint != null) sprite.tint = props.tint;
     sprite.position.set(props.x, props.y);
     layer.addChild(sprite);
@@ -569,6 +624,18 @@ export async function createGL(root) {
         reel.speed = 0;
         return digit(n);
       },
+      // 全回転：3つを同じ数字にそろえて、一緒に回す
+      alignAll() {
+        const base = Math.floor(reels[0].offset / h) * h;
+        for (const reel of reels) { reel.offset = base; reel.speed = h * 24; reel.manual = false; reel.reach = true; }
+      },
+      async stepAll(ms) {
+        const [d] = await Promise.all(reels.map((_, i) => this.step(i, ms)));
+        return d;
+      },
+      flashAll() {
+        for (const reel of reels) { reel.reach = false; reel.glow.alpha = 1.6; tween(reel.glow, { alpha: 0.6 }, 600); }
+      },
       setReach(i, on) {
         reels[i].reach = on;
         if (!on) tween(reels[i].glow, { alpha: 0.5 }, 200);
@@ -588,7 +655,8 @@ export async function createGL(root) {
   }
 
   // ---- 斜めの帯のカットイン ----
-  function cutIn(text, tier) {
+  // pattern：'zebra' か 'kirin' なら帯をその柄にする（出たらほぼ当たり）
+  function cutIn(text, tier, pattern = null) {
     const c = new PIXI.Container();
     const bw = Math.hypot(W(), H()) * 1.4;
     const bh = Math.min(H() * 0.16, 160);
@@ -603,7 +671,15 @@ export async function createGL(root) {
     const edges = new PIXI.Graphics()
       .rect(-bw / 2, -bh / 2 - 7, bw, 7).fill(0xffffff)
       .rect(-bw / 2, bh / 2, bw, 7).fill(0xffffff);
-    const label = metalText(PIXI, FILTERS, app.renderer, tx, text, tier === 3 ? 2 : 3, bh * 0.62);
+    let tile = null;
+    if (pattern) {
+      tile = new PIXI.TilingSprite({ texture: tx[pattern], width: bw, height: bh });
+      tile.position.set(-bw / 2, -bh / 2);
+      tile.tileScale.set(bh / 200);
+      glowBand.tint = pattern === 'kirin' ? 0xffb000 : 0xffffff;
+    }
+    const labelTier = pattern === 'zebra' ? 2 : pattern === 'kirin' ? 0 : tier === 3 ? 2 : 3;
+    const label = metalText(PIXI, FILTERS, app.renderer, tx, text, labelTier, bh * 0.62);
     label.scale.set(Math.min(1, fitText(label, W() * 0.9, bh * 1.2)));
     const sweep = new PIXI.Sprite(tx.shine);
     sweep.anchor.set(0.5);
@@ -611,12 +687,19 @@ export async function createGL(root) {
     sweep.width = W() * 0.8;
     sweep.height = bh;
     sweep.alpha = 0.6;
-    c.addChild(glowBand, band, sweep, edges, label);
+    c.addChild(glowBand, band, ...(tile ? [tile] : []), sweep, edges, label);
     c.rotation = -0.12;
     c.position.set(W() * 1.9, H() * 0.45);
     fgLayer.addChild(c);
     let t = 0;
-    const untick = ticking({ tick: (dt) => { t += dt; label.tick(dt); sweep.x = ((t % 700) / 700) * bw - bw / 2; } });
+    const untick = ticking({
+      tick: (dt) => {
+        t += dt;
+        label.tick(dt);
+        sweep.x = ((t % 700) / 700) * bw - bw / 2;
+        if (tile) tile.tilePosition.x -= dt * 0.4;
+      },
+    });
     return {
       async enter() {
         zoom.center = { x: W() / 2, y: H() * 0.45 };
@@ -662,6 +745,278 @@ export async function createGL(root) {
     };
   }
 
+  // ---- 降ってくるコインと紙吹雪、まわりのきらめき ----
+  function confettiRain(tier, ms) {
+    const until = performance.now() + ms;
+    const rain = () => {
+      if (performance.now() > until) return;
+      for (let i = 0; i < [1, 1, 1, 2, 2][tier]; i += 1) {
+        spawn('glint', tx.glint, { x: rand(0, W()), y: rand(0, H()), life: rand(0.25, 0.5), size: rand(0.25, 0.6), fade: 0.01 });
+        if (tier >= 3) {
+          spawn('coin', tx.coin, { x: rand(0, W()), y: -30, vx: rand(-40, 40), vy: rand(250, 450), gravity: 300, life: 3, size: rand(0.16, 0.3), fade: 0.2 }, topLayer);
+          spawn('confetti', PIXI.Texture.WHITE, {
+            x: rand(0, W()), y: -20, vx: rand(-60, 60), vy: rand(120, 220), gravity: 60, drag: 0.99, life: 3.5, size: rand(28, 48), fade: 0.3,
+            tint: tier === 4 ? Number.parseInt(RAINBOW[Math.floor(rand(0, 7))].slice(1), 16) : [0xffd23f, 0xffffff, 0xffa600][Math.floor(rand(0, 3))],
+          }, topLayer);
+        }
+      }
+      later(rain, 40);
+    };
+    rain();
+  }
+
+  // ---- ステップアップ予告：板が1枚ずつ叩きつけられ、色が上がっていく ----
+  // n 枚目まで上がる。infinite なら最後に「STEP∞」（キリン柄）
+  async function stepUp(n, infinite, sfx, wait) {
+    const pw = Math.min(W() * 0.82, 440);
+    const ph = pw * 0.42;
+    const y = H() * 0.42;
+    const total = n + (infinite ? 1 : 0);
+    // 下のゲージ。5つの玉が1つずつ灯る
+    const gauge = new PIXI.Container();
+    gauge.position.set(W() / 2, y + ph * 0.5 + 44);
+    const pips = Array.from({ length: 5 }, (_, i) => {
+      const pip = new PIXI.Sprite(tx.dome);
+      pip.anchor.set(0.5);
+      pip.width = pip.height = 34;
+      pip.x = (i - 2) * 40;
+      pip.tint = 0x333333;
+      gauge.addChild(pip);
+      return pip;
+    });
+    fgLayer.addChild(gauge);
+    let prev = null;
+    for (let k = 0; k < total; k += 1) {
+      const last = infinite && k === n;
+      const t = last ? 4 : Math.min(k, 4);
+      const panel = new PIXI.Container();
+      panel.position.set(W() / 2, y);
+      const glowG = new PIXI.Graphics().roundRect(-pw / 2 - 20, -ph / 2 - 20, pw + 40, ph + 40, 30).fill(TIER_COLOR[t]);
+      glowG.blendMode = 'add';
+      glowG.filters = [new PIXI.BlurFilter({ strength: 22, quality: 3 })];
+      const plate = new PIXI.Graphics().roundRect(-pw / 2, -ph / 2, pw, ph, 18).fill(new PIXI.FillGradient({
+        type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local',
+        colorStops: [{ offset: 0, color: TIER_COLOR[t] }, { offset: 0.5, color: TIER_DARK[t] }, { offset: 1, color: 0x000000 }],
+      }));
+      const layers = [glowG, plate];
+      if (last || t === 3) {
+        const tile = new PIXI.TilingSprite({ texture: last ? tx.kirin : tx.zebra, width: pw, height: ph });
+        tile.position.set(-pw / 2, -ph / 2);
+        tile.tileScale.set(ph / 180);
+        const mask = new PIXI.Graphics().roundRect(-pw / 2, -ph / 2, pw, ph, 18).fill(0xffffff);
+        tile.mask = mask;
+        layers.push(tile, mask);
+      }
+      const frame = new PIXI.Graphics().roundRect(-pw / 2, -ph / 2, pw, ph, 18).stroke({ color: 0xffffff, width: 6 });
+      const label = metalText(PIXI, FILTERS, app.renderer, tx, last ? 'STEP∞' : `STEP${k + 1}`, last ? 0 : t === 3 ? 2 : t, ph * 0.5);
+      label.scale.set(Math.min(1, fitText(label, pw * 0.86, ph * 0.9)));
+      layers.push(frame, label);
+      panel.addChild(...layers);
+      panel.scale.set(2.6);
+      panel.alpha = 0;
+      fgLayer.addChild(panel);
+      const untick = ticking(label);
+      panel.untick = untick;
+      if (prev) {
+        const old = prev;
+        tween(old, { alpha: 0 }, 140);
+        tween(old.scale, { x: 1.4, y: 1.4 }, 140).then(() => { old.untick(); old.destroy({ children: true }); });
+      }
+      setColor(t);
+      rays.alpha = 0.08 + k * 0.06;
+      ringAlpha = 0.15 + k * 0.05;
+      ringSpeed = 0.6 + k * 0.4;
+      tween(panel, { alpha: 1 }, 80);
+      await tween(panel.scale, { x: 1, y: 1 }, 150, easeIn);
+      hitStop = 50 + k * 15;
+      shakeAmp = 14 + k * 7;
+      doFlash(TIER_COLOR[t], 0.7, 240);
+      shockAt(W() / 2, y, 25 + k * 10);
+      burst(W() / 2, y, t, 30 + k * 20, 600 + k * 120);
+      sfx.sample?.('sfx-upgrade', { gain: 0.8, rate: 0.85 + k * 0.12 });
+      if (k >= 3) sfx.sample?.('sfx-impact', { gain: 0.5 });
+      if (k === 1) sfx.sample?.('voice-stepup', { gain: 1.3, at: 0.05 });
+      pips.forEach((pip, i) => { if (i <= k || last) pip.tint = last ? Number.parseInt(RAINBOW[i].slice(1), 16) : TIER_COLOR[t]; });
+      if (last) {
+        sfx.sample?.('voice-kita', { gain: 1.4, at: 0.1 });
+        strobe(4, 12);
+        rays2.alpha = 0.25;
+        zoom.center = { x: W() / 2, y };
+        zoom.strength = 0.35;
+        tween(zoom, { strength: 0 }, 700);
+      }
+      prev = panel;
+      await wait(last ? 1300 : k === total - 1 ? 700 : 480);
+    }
+    tween(gauge, { alpha: 0 }, 200);
+    tween(prev, { alpha: 0 }, 200);
+    await tween(prev.scale, { x: 0.5, y: 0.5 }, 200, easeIn);
+    prev.untick();
+    prev.destroy({ children: true });
+    gauge.destroy({ children: true });
+    rays.alpha = 0;
+    rays2.alpha = 0;
+  }
+
+  // ---- 役物：巨大なメダルが上から落ちてきて、画面にひびが入る ----
+  async function gimmick(tier, sfx, wait) {
+    const size = Math.min(W(), H()) * 0.8;
+    const y = H() * 0.42;
+    const g = new PIXI.Container();
+    // 吊っている2本の棒
+    const rodFill = new PIXI.FillGradient({
+      type: 'linear', start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, textureSpace: 'local',
+      colorStops: [{ offset: 0, color: '#5b616b' }, { offset: 0.4, color: '#ffffff' }, { offset: 1, color: '#3a3f47' }],
+    });
+    for (const x of [-size * 0.28, size * 0.28]) g.addChild(new PIXI.Graphics().rect(x - size * 0.03, -H() * 1.2, size * 0.06, H() * 1.2 - size * 0.3).fill(rodFill));
+    const halo = new PIXI.Sprite(tx.ring);
+    halo.anchor.set(0.5);
+    halo.blendMode = 'add';
+    halo.width = halo.height = size * 1.5;
+    halo.tint = TIER_COLOR[tier];
+    const dome = new PIXI.Sprite(tx.dome);
+    dome.anchor.set(0.5);
+    dome.width = dome.height = size;
+    dome.tint = TIER_COLOR[tier];
+    const bezel = new PIXI.Sprite(tx.bezel);
+    bezel.anchor.set(0.5);
+    bezel.width = bezel.height = size;
+    const mark = metalText(PIXI, FILTERS, app.renderer, tx, '激', tier === 4 ? 4 : 3, size * 0.42);
+    g.addChild(halo, dome, bezel, mark);
+    g.position.set(W() / 2, -size);
+    fgLayer.addChild(g);
+    let t = 0;
+    const untick = ticking({ tick: (dt) => { t += dt; mark.tick(dt); halo.alpha = 0.6 + 0.4 * Math.sin(t / 60); } });
+
+    // ガタッ、ガタッ…と予兆
+    for (let i = 0; i < 2; i += 1) {
+      shakeAmp = 10 + i * 8;
+      doFlash(TIER_COLOR[tier], 0.3, 160);
+      sfx.sample?.('sfx-stop', { gain: 0.9, rate: 0.55 });
+      await wait(300);
+    }
+    await tween(g, { y }, 320, easeIn);
+
+    // 落ちた：止まる → 白 → ひび → 衝撃波
+    hitStop = 150;
+    shakeAmp = 64;
+    doFlash(0xffffff, 1, 320);
+    shockAt(W() / 2, y + size * 0.3, 90);
+    zoom.center = { x: W() / 2, y };
+    zoom.strength = 0.4;
+    tween(zoom, { strength: 0 }, 600);
+    const crack = new PIXI.Sprite(tx.crack);
+    crack.anchor.set(0.5);
+    crack.position.set(W() / 2 + rand(-30, 30), y + size * 0.25);
+    crack.width = crack.height = Math.hypot(W(), H()) * 1.1;
+    crack.rotation = rand(0, Math.PI * 2);
+    topLayer.addChild(crack);
+    sfx.sample?.('sfx-impact', { gain: 1, rate: 0.75 });
+    sfx.sample?.('sfx-stop', { gain: 1, rate: 1.8, at: 0.03 });
+    sfx.sample?.('voice-kita', { gain: 1.4, at: 0.2 });
+    burst(W() / 2, y + size * 0.45, tier, 140, 1300);
+    strobe(tier, 6);
+    // 跳ねて落ち着く
+    await tween(g, { y: y - size * 0.07 }, 130, easeOut);
+    await tween(g, { y }, 150, easeIn);
+    shakeAmp = 22;
+    await wait(1100);
+    tween(crack, { alpha: 0 }, 500).then(() => crack.destroy());
+    await tween(g, { y: -size }, 280, easeIn);
+    untick();
+    g.destroy({ children: true });
+  }
+
+  // ---- 出玉：研究時間を玉の数にしてカウントアップする。赤以上はラウンドも ----
+  async function payout(tier, minutes, sfx, wait) {
+    const balls = minutes * 100;
+    const rounds = tier >= 2 ? Math.min(16, Math.max(1, Math.ceil(minutes / 15))) : 0;
+    const pw = Math.min(W() * 0.86, 440);
+    const ph = Math.min(H() * 0.1, 84);
+    const gold = (size) => ({
+      fontFamily: FONT,
+      fontSize: size,
+      fill: new PIXI.FillGradient({ type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local', colorStops: METAL[3].map((color, i) => ({ offset: [0, 0.34, 0.5, 0.64, 1][i], color })) }),
+      stroke: { color: 0x2a1a00, width: size * 0.12, join: 'round' },
+      dropShadow: { color: 0x000000, blur: 4, distance: 3, alpha: 0.8, angle: Math.PI / 2 },
+    });
+    const plain = (size) => ({ fontFamily: FONT, fontSize: size, fill: 0xffffff, stroke: { color: 0x000000, width: size * 0.12 } });
+    const plateOf = (w, h) => new PIXI.Graphics()
+      .roundRect(-w / 2, -h / 2, w, h, 14)
+      .fill({ color: 0x000000, alpha: 0.65 })
+      .stroke({ color: TIER_COLOR[tier], width: 3 });
+
+    const box = new PIXI.Container();
+    const head = new PIXI.Text({ text: '獲得', style: plain(ph * 0.32), resolution: 2 });
+    head.anchor.set(0, 0.5);
+    head.x = -pw / 2 + 18;
+    const value = new PIXI.Text({ text: '0', style: gold(ph * 0.66), resolution: 2 });
+    value.anchor.set(1, 0.5);
+    value.x = pw / 2 - ph * 0.62;
+    const unit = new PIXI.Text({ text: '発', style: plain(ph * 0.36), resolution: 2 });
+    unit.anchor.set(0, 0.5);
+    unit.x = pw / 2 - ph * 0.55;
+    box.addChild(plateOf(pw, ph), head, value, unit);
+    box.position.set(W() / 2, H() + ph);
+    topLayer.addChild(box);
+
+    let round = null;
+    if (rounds) {
+      round = new PIXI.Container();
+      const rt = new PIXI.Text({ text: 'ROUND 1', style: gold(ph * 0.6), resolution: 2 });
+      rt.anchor.set(0.5);
+      round.addChild(plateOf(Math.min(W() * 0.7, 320), ph * 0.95), rt);
+      round.text = rt;
+      round.position.set(W() / 2, -ph);
+      topLayer.addChild(round);
+      tween(round, { y: H() * 0.13 }, 220, easeOut);
+      sfx.sample?.('voice-round', { gain: 1.3 });
+    }
+    await tween(box, { y: H() * 0.82 }, 220, easeOut);
+
+    const dur = 1500 + tier * 350;
+    let t = 0;
+    let lastRound = 1;
+    let lastTick = 0;
+    await new Promise((resolve) => {
+      const count = (dt) => {
+        t += dt;
+        const k = easeOut(Math.min(1, t / dur));
+        value.text = Math.round(balls * k).toLocaleString('en-US');
+        // 桁が増えても「獲得」と重ならない大きさにする
+        const room = value.x - (head.x + head.width) - 14;
+        value.scale.set(Math.min(1, room / (value.width / value.scale.x)));
+        if (t - lastTick > 55) {
+          lastTick = t;
+          sfx.sample?.('sfx-tick', { gain: 0.3, rate: rand(1.6, 2.2) }); // ジャラジャラ
+        }
+        // 玉があふれ出てくる
+        for (let i = 0; i < 1 + tier; i += 1) {
+          spawn('ball', tx.ball, { x: rand(W() * 0.1, W() * 0.9), y: H() * 0.82, vx: rand(-260, 260), vy: rand(-900, -500), gravity: 1800, life: 1.4, size: rand(0.22, 0.34), fade: 0.2 }, fgLayer); // 数字の板より奥
+        }
+        if (round) {
+          const r = Math.max(1, Math.ceil(rounds * k));
+          if (r !== lastRound) {
+            lastRound = r;
+            round.text.text = `ROUND ${r}`;
+            doFlash(TIER_COLOR[tier], 0.25, 120);
+            shakeAmp = Math.max(shakeAmp, 5);
+          }
+        }
+        if (t >= dur) { updaters.delete(count); resolve(); }
+      };
+      updaters.add(count);
+    });
+    sfx.sample?.('sfx-stop', { gain: 1 });
+    sfx.sample?.('sfx-upgrade', { gain: 0.8, rate: 1.2 });
+    doFlash(0xffffff, 0.6, 220);
+    shakeAmp = 18;
+    shockAt(W() / 2, H() * 0.82, 40);
+    burst(W() / 2, H() * 0.82, tier, 60 + tier * 20, 800);
+    tween(box.scale, { x: 1.12, y: 1.12 }, 80).then(() => tween(box.scale, { x: 1, y: 1 }, 220, easeBack));
+    await wait(900);
+  }
+
   // ---- 始める ----
   // opts: { origin, streak, tier, sfx, wait, vibrate }
   async function start({ origin, streak, tier, sfx, wait, vibrate }) {
@@ -681,6 +1036,13 @@ export async function createGL(root) {
     sfx.sample?.('sfx-cutin', { gain: 0.7 });
     await band.enter();
     for (let i = 0; i < 24; i += 1) later(() => spawn('glint', tx.glint, { x: rand(0, W()), y: rand(0, H()), life: rand(0.25, 0.5), size: rand(0.25, 0.6), fade: 0.01 }), i * 45);
+    if (streak >= 3) {
+      await wait(500);
+      await band.leave();
+      await rush(streak, sfx, wait);
+      await tween(world, { alpha: 0 }, 220);
+      return;
+    }
     if (streak >= 2) {
       await wait(350);
       const stamp = await slam(`${streak}日連続！`, 3, band.y + band.height * 1.1, H() * 0.08);
@@ -693,6 +1055,40 @@ export async function createGL(root) {
     }
     await band.leave();
     await tween(world, { alpha: 0 }, 220);
+  }
+
+  // ---- 研究RUSH：3日以上続けて始めたとき ----
+  async function rush(streak, sfx, wait) {
+    black.alpha = 1;
+    await wait(280);
+    black.alpha = 0;
+    setColor(4);
+    rays.alpha = 0.45;
+    rays2.alpha = 0.3;
+    ringAlpha = 0.4;
+    ringSpeed = 3.2;
+    zoom.center = { x: W() / 2, y: H() * 0.4 };
+    zoom.strength = 0.5;
+    tween(zoom, { strength: 0 }, 700);
+    doFlash(0xffffff, 1, 400);
+    sfx.sample?.('sfx-impact', { gain: 1 });
+    sfx.sample?.('sfx-fanfare-3', { gain: 0.9 });
+    sfx.sample?.('voice-rush', { gain: 1.4, at: 0.1 });
+    strobe(4, 12);
+    const title = await slam('RUSH突入！', 4, H() * 0.4, H() * 0.18);
+    shakeAmp = 34;
+    burst(W() / 2, H() * 0.4, 4, 180, 1300);
+    later(() => burst(W() * 0.22, H() * 0.35, 4, 60, 700), 300);
+    later(() => burst(W() * 0.78, H() * 0.35, 4, 60, 700), 500);
+    confettiRain(4, 2600);
+    await wait(600);
+    const count = await slam(`${streak}連チャン中！`, 3, H() * 0.6, H() * 0.09);
+    sfx.sample?.('sfx-upgrade', { gain: 0.9 });
+    burst(W() / 2, H() * 0.6, 3, 50, 600);
+    await wait(1600);
+    title.leave();
+    count.leave();
+    await wait(200);
   }
 
   // ---- 記録中の節目 ----
@@ -834,7 +1230,7 @@ export async function createGL(root) {
   }
 
   // ---- 止める ----
-  // opts: { tier, shown, pseudo, withPush, values, sub, sfx, wait, waitTap, vibrate }
+  // opts: { tier, shown, pseudo, withPush, steps, gimmick, pattern, values, minutes, sub, sfx, wait, waitTap, vibrate }
   async function stop(opts) {
     const { tier, pseudo, withPush, values, sfx, wait, vibrate } = opts;
     let { shown } = opts;
@@ -867,6 +1263,13 @@ export async function createGL(root) {
     }
     await wait(tier >= 2 ? 1400 : 600);
 
+    // ステップアップ予告
+    await stepUp(opts.steps, tier === 4, sfx, wait);
+    setColor(shown);
+    ringAlpha = 0.06;
+    ringSpeed = 0.2;
+    await wait(250);
+
     // リールが現れて回り出す
     const reels = makeReels(shown);
     reels.spinAll();
@@ -895,9 +1298,17 @@ export async function createGL(root) {
       call.leave();
     }
 
+    // 役物が落ちてくる（赤以上のときだけ）
+    if (opts.gimmick) {
+      await wait(300);
+      reels.set.visible = false;
+      await gimmick(Math.max(shown, 2), sfx, wait);
+      reels.set.visible = true;
+    }
+
     // 3. リーチ
     await wait(450);
-    const band = cutIn('リーチ', shown);
+    const band = cutIn('リーチ', shown, opts.pattern);
     sfx.sample?.('sfx-cutin', { gain: 1 });
     sfx.sample?.('voice-reach', { gain: 1.35, at: 0.18 });
     await band.enter();
@@ -905,7 +1316,23 @@ export async function createGL(root) {
     await wait(1100);
     await band.leave();
 
-    // 4. 左 → 右と止まり、真ん中は1コマずつ粘る
+    const lastBeforePush = withPush && shown < tier ? tier - 1 : tier;
+    if (tier === 4) {
+      await zenkaiten(reels, lastBeforePush, upgrade, () => shown, sfx, wait);
+    } else {
+      await crawl(reels, lastBeforePush, upgrade, () => shown, opts, sfx, wait, vibrate);
+    }
+    for (const i of [0, 1, 2]) reels.setReach(i, false);
+    await wait(650);
+    tween(camState, { zoom: 1 }, 300);
+    await reels.hide();
+
+    // 5〜8. 押せ！ → 無音の暗転 → 結果
+    await run({ ...opts, shown });
+  }
+
+  // 4. 左 → 右と止まり、真ん中は1コマずつ粘る
+  async function crawl(reels, lastBeforePush, upgrade, getShown, { tier, values }, sfx, wait, vibrate) {
     await wait(250);
     const hours = Math.min(9, Number(values[0]));
     await reels.stop(0, hours);
@@ -917,13 +1344,12 @@ export async function createGL(root) {
     rays.alpha = 0.14;
     ringSpeed = 1.1;
     ringAlpha = 0.25;
-    if (tier >= 2) { sfx.sample?.('sfx-heartbeat', { gain: 0.9 }); beat(shown, 0.5); }
+    if (tier >= 2) { sfx.sample?.('sfx-heartbeat', { gain: 0.9 }); beat(getShown(), 0.5); }
     await reels.slow(1, 1100);
 
     const target = Number(values[1]);
     const stopAt = tier >= 2 ? (target + 9) % 10 : target; // 赤以上は1コマ手前で止めて見せる
-    const lastBeforePush = withPush && shown < tier ? tier - 1 : tier;
-    let ups = lastBeforePush - shown;
+    let ups = lastBeforePush - getShown();
     let count = 0;
     let ms = 150;
     for (;;) {
@@ -932,7 +1358,7 @@ export async function createGL(root) {
       count += 1;
       ms = Math.min(ms * 1.13, 520);
       camZoom = 1 + Math.min(0.1, count * 0.008);
-      if (ups > 0 && count % 2 === 0) { upgrade(shown + 1, reels.center(1)); ups -= 1; }
+      if (ups > 0 && count % 2 === 0) { upgrade(getShown() + 1, reels.center(1)); ups -= 1; }
       if (count >= 6 && ups === 0 && d === stopAt) break;
     }
     sfx.sample?.('sfx-stop', { gain: 1 });
@@ -943,23 +1369,61 @@ export async function createGL(root) {
       await reels.step(1, 110);
       sfx.sample?.('sfx-stop', { gain: 1 });
       sfx.sample?.('sfx-upgrade', { gain: 0.9 });
-      strobe(shown, 4);
+      strobe(getShown(), 4);
       hitStop = 90;
       shakeAmp = 30;
       const at = reels.center(1);
       shockAt(at.x, at.y, 40);
       vibrate(80);
     }
-    reels.setReach(1, false);
-    await wait(650);
-    tween(camState, { zoom: 1 }, 300);
-    await reels.hide();
-
-    // 5〜8. 押せ！ → 無音の暗転 → 結果
-    await run({ ...opts, shown });
   }
 
-  async function run({ tier, shown, withPush, sub, sfx, wait, waitTap, vibrate, onUpgrade }) {
+  // 4'. 全回転（虹のとき）：3つが同じ数字のまま回り、7・7・7で止まる
+  async function zenkaiten(reels, lastBeforePush, upgrade, getShown, sfx, wait) {
+    reels.alignAll();
+    sfx.sample?.('sfx-respin', { gain: 1, rate: 1.2 });
+    const band = cutIn('全回転', 4, 'kirin');
+    sfx.sample?.('sfx-cutin', { gain: 1 });
+    sfx.sample?.('voice-zenkaiten', { gain: 1.4, at: 0.15 });
+    await band.enter();
+    strobe(4, 12);
+    rays.alpha = 0.3;
+    rays2.alpha = 0.2;
+    ringAlpha = 0.35;
+    ringSpeed = 2.4;
+    if (getShown() < lastBeforePush) upgrade(lastBeforePush, { x: W() / 2, y: H() * 0.45 });
+    await wait(1100);
+    await band.leave();
+    await wait(700);
+
+    let ms = 90;
+    let count = 0;
+    for (;;) {
+      const d = await reels.stepAll(ms);
+      sfx.sample?.('sfx-tick', { gain: 0.9, rate: 1 + count * 0.02 });
+      count += 1;
+      ms = Math.min(ms * 1.12, 400);
+      camZoom = 1 + Math.min(0.12, count * 0.008);
+      if (count % 2 === 0) beat(getShown(), 0.5);
+      if (count >= 12 && d === 7) break;
+    }
+    // 7・7・7
+    reels.flashAll();
+    hitStop = 160;
+    shakeAmp = 44;
+    doFlash(0xffffff, 1, 420);
+    shockAt(W() / 2, H() * 0.45, 70);
+    strobe(4, 14);
+    for (const i of [0, 1, 2]) { const at = reels.center(i); burst(at.x, at.y, 4, 50, 900); }
+    sfx.sample?.('sfx-stop', { gain: 1 });
+    sfx.sample?.('sfx-impact', { gain: 1 });
+    sfx.sample?.('voice-kakutei', { gain: 1.4, at: 0.12 });
+    const sure = await slam('確定', 4, H() * 0.22, H() * 0.1);
+    await wait(1400);
+    sure.leave();
+  }
+
+  async function run({ tier, shown, withPush, sub, minutes, sfx, wait, waitTap, vibrate, onUpgrade }) {
     let current = shown;
     setColor(current);
     canvas.style.opacity = '1';
@@ -1126,23 +1590,7 @@ export async function createGL(root) {
         later(() => doFlash(i % 2 ? TIER_COLOR[tier] : 0xffffff, 0.8, 70), 120 + i * 75);
       }
     }
-    // 降ってくるコインと紙吹雪、まわりのきらめき
-    const until = performance.now() + 1800 + tier * 400;
-    const rain = () => {
-      if (performance.now() > until) return;
-      for (let i = 0; i < [1, 1, 1, 2, 2][tier]; i += 1) {
-        spawn('glint', tx.glint, { x: rand(0, W()), y: rand(0, H()), life: rand(0.25, 0.5), size: rand(0.25, 0.6), fade: 0.01 });
-        if (tier >= 3) {
-          spawn('coin', tx.coin, { x: rand(0, W()), y: -30, vx: rand(-40, 40), vy: rand(250, 450), gravity: 300, life: 3, size: rand(0.16, 0.3), fade: 0.2 }, topLayer);
-          spawn('confetti', PIXI.Texture.WHITE, {
-            x: rand(0, W()), y: -20, vx: rand(-60, 60), vy: rand(120, 220), gravity: 60, drag: 0.99, life: 3.5, size: rand(28, 48), fade: 0.3,
-            tint: tier === 4 ? Number.parseInt(RAINBOW[Math.floor(rand(0, 7))].slice(1), 16) : [0xffd23f, 0xffffff, 0xffa600][Math.floor(rand(0, 3))],
-          }, topLayer);
-        }
-      }
-      later(rain, 40);
-    };
-    rain();
+    confettiRain(tier, 1800 + tier * 400 + 2500);
     if (tier >= 2) {
       later(() => burst(W() * 0.22, H() * 0.4, tier, 60, 700), 350);
       later(() => burst(W() * 0.78, H() * 0.4, tier, 60, 700), 550);
@@ -1153,7 +1601,9 @@ export async function createGL(root) {
       bloom.bloomScale = 0.95 + 0.3 * Math.sin(t / 120);
       logo.rotation = Math.sin(t / 700) * 0.015;
     });
-    await wait(2200 + tier * 450);
+    await wait(1300);
+    await payout(tier, minutes, sfx, wait);
+    await wait(500 + tier * 200);
     await tween(world, { alpha: 0 }, 300);
   }
 

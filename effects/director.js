@@ -421,7 +421,7 @@ const SCENES = {
 
   // data: { origin: {x, y}, streak }
   async start(fx, { origin, streak }) {
-    const tier = streak >= 5 ? 3 : streak >= 3 ? 2 : streak >= 2 ? 1 : 0;
+    const tier = streak >= 5 ? 3 : streak >= 3 ? 2 : streak >= 2 ? 1 : 0; // 3日以上は研究RUSH
     fx.dim(0.75);
     const gl = await fx.prepareGL(700);
     if (gl) {
@@ -459,6 +459,12 @@ const SCENES = {
     // 色が上ほど長く溜める
     const pseudo = [0, chance() < 0.3 ? 1 : 0, 1, 2, 2][tier] + (tier >= 3 && chance() < 0.5 ? 1 : 0);
     const withPush = tier >= 2 || chance() < 0.25;
+    // ステップアップは何段まで上がるか（虹はこのあと STEP∞）
+    const steps = [chance() < 0.6 ? 1 : 2, chance() < 0.5 ? 2 : 3, 3, chance() < 0.5 ? 4 : 5, 5][tier];
+    // 役物は赤以上だけ。上の色ほど落ちやすい
+    const gimmick = chance() < [0, 0, 0.5, 0.8, 1][tier];
+    // リーチの帯の柄。ゼブラは激アツ以上、虹は必ず
+    const pattern = tier === 4 || (tier === 3 && chance() < 0.6) || (tier === 2 && chance() < 0.15) ? 'zebra' : null;
     const sub = `今回 ${formatDuration(length)}・きょう ${formatDuration(today)}`;
 
     fx.dim(0.96, 400);
@@ -466,7 +472,7 @@ const SCENES = {
     if (gl) {
       fx.hideStage();
       await gl.stop({
-        tier, shown, pseudo, withPush, values, sub,
+        tier, shown, pseudo, withPush, steps, gimmick, pattern, values, minutes, sub,
         sfx: fx.sfx, wait: fx.wait, waitTap: (ms) => fx.waitTap(ms), vibrate: fx.vibrate,
       });
       return;

@@ -1,11 +1,12 @@
 // 電波がなくても開けるようにする。キャッシュを先に返し、裏で新しい版に入れ替える。
-const CACHE = 'timecard-v8';
+const CACHE = 'timecard-v9';
 const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'logic.js',
-  'effects/director.js', 'effects/particles.js', 'effects/sound.js', 'effects/effects.css', 'effects/gl.js',
+  'effects/director.js', 'effects/particles.js', 'effects/sound.js', 'effects/effects.css', 'effects/gl.js', 'effects/patterns.js',
   'vendor/pixi.min.mjs', 'vendor/pixi-filters.mjs',
   ...['sfx-riser', 'sfx-push', 'sfx-impact', 'sfx-stop', 'sfx-tick', 'sfx-cutin', 'sfx-upgrade', 'sfx-heartbeat', 'sfx-respin', 'sfx-start', 'sfx-drumroll',
-    'voice-push', 'voice-reach', 'voice-start', 'voice-chance', 'voice-weekly']
+    'voice-push', 'voice-reach', 'voice-start', 'voice-chance', 'voice-weekly',
+    'voice-rush', 'voice-zenkaiten', 'voice-kakutei', 'voice-kita', 'voice-stepup', 'voice-round']
     .concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => `voice-m${i}`))
     .concat([0, 1, 2, 3, 4].flatMap((t) => [`sfx-fanfare-${t}`, `voice-${t}`]))
     .map((name) => `sounds/${name}.mp3`),
