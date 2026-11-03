@@ -1,4 +1,5 @@
 // 演出の声を VOICEVOX で作る。VOICEVOX を起動した状態で `npm run voices`。
+// ファイル名を並べると、その声だけを作る（例：`npm run voices -- voice-m1 voice-weekly`）。
 // 声：VOICEVOX:青山龍星（熱血）。クレジット表記が利用条件。
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -26,7 +27,8 @@ const LINES = [
 ];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'voices-'));
-for (const [name, text, speed, pitch, intonation] of LINES) {
+const only = process.argv.slice(2);
+for (const [name, text, speed, pitch, intonation] of LINES.filter(([n]) => !only.length || only.includes(n))) {
   const q = await (await fetch(`${ENGINE}/audio_query?speaker=${SPEAKER}&text=${encodeURIComponent(text)}`, { method: 'POST' })).json();
   Object.assign(q, { speedScale: speed, pitchScale: pitch, intonationScale: intonation, volumeScale: 1.3, prePhonemeLength: 0.02, postPhonemeLength: 0.1, outputSamplingRate: 44100 });
   const wav = Buffer.from(await (await fetch(`${ENGINE}/synthesis?speaker=${SPEAKER}`, {
