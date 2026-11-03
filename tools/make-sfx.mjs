@@ -279,6 +279,19 @@ const filteredCrash = filtered(() => noise(), 'high', 5000, 0.5);
   write('sfx-start', out, { verb: { wet: 0.3, room: 0.82 } });
 }
 
+// 結果発表のドラムロール（だんだん強く、最後にシンバル）
+{
+  const out = track(3.6);
+  const snare = filtered(() => noise(), 'band', 1800, 0.8);
+  for (let t = 0; t < 2.6; t += 0.045) {
+    const g = 0.15 + 0.6 * (t / 2.6) ** 1.5;
+    addTo(out, t, (u) => (snare(u) * 1.4 + Math.sin(TAU * 190 * u) * 0.4) * Math.exp(-u * 35) * g, 0.12, (Math.random() - 0.5) * 0.4);
+  }
+  drum(out, 2.6, { gain: 1, decay: 0.6 });
+  addTo(out, 2.6, (t) => filteredCrash(t) * Math.exp(-t * 1.6) * 0.5, 1.0);
+  write('sfx-drumroll', out, { verb: { wet: 0.25, room: 0.8 } });
+}
+
 // 色ごとのファンファーレ（ハ長調）
 const C4 = 60;
 const TRIAD = (root) => [root, root + 4, root + 7];

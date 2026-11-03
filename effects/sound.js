@@ -6,9 +6,10 @@ const note = (semitones) => C5 * 2 ** (semitones / 12);
 
 // 書き出し済みの音（sounds/*.mp3）。声は VOICEVOX:青山龍星
 export const SAMPLES = [
-  'sfx-riser', 'sfx-push', 'sfx-impact', 'sfx-stop', 'sfx-tick', 'sfx-cutin', 'sfx-upgrade', 'sfx-heartbeat', 'sfx-respin', 'sfx-start',
+  'sfx-riser', 'sfx-push', 'sfx-impact', 'sfx-stop', 'sfx-tick', 'sfx-cutin', 'sfx-upgrade', 'sfx-heartbeat', 'sfx-respin', 'sfx-start', 'sfx-drumroll',
   'sfx-fanfare-0', 'sfx-fanfare-1', 'sfx-fanfare-2', 'sfx-fanfare-3', 'sfx-fanfare-4',
-  'voice-push', 'voice-reach', 'voice-start', 'voice-chance', 'voice-0', 'voice-1', 'voice-2', 'voice-3', 'voice-4',
+  'voice-push', 'voice-reach', 'voice-start', 'voice-chance',
+  // 節目と週の声（voice-m1〜m9・voice-weekly）は VOICEVOX が動くときに `npm run voices` で作ってからここに足す 'voice-0', 'voice-1', 'voice-2', 'voice-3', 'voice-4',
 ];
 
 export function createSound() {

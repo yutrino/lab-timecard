@@ -220,7 +220,7 @@ function metalText(PIXI, FILTERS, renderer, tx, text, tier, size) {
 
 export async function createGL(root) {
   const { PIXI, FILTERS } = await loadGL();
-  await document.fonts.load(`100px ${FONT}`, '押せ！おつかれさまナイス研究激アツ大当たり超リーチ再変動×スタート日連続0123456789');
+  await document.fonts.load(`100px ${FONT}`, '押せ！おつかれさまナイス研究激アツ大当たり超リーチ再変動×スタート日連続0123456789分時間突破チャンス昇格結果発表合計月週');
 
   const app = new PIXI.Application();
   await app.init({
@@ -695,6 +695,144 @@ export async function createGL(root) {
     await tween(world, { alpha: 0 }, 220);
   }
 
+  // ---- 記録中の節目 ----
+  // opts: { index, label, tier, raised, sfx, wait, vibrate }
+  async function milestone({ index, label, tier, raised, sfx, wait, vibrate }) {
+    setColor(tier);
+    canvas.style.opacity = '1';
+    rays.alpha = 0.3;
+    ringAlpha = 0.25;
+    ringSpeed = 1.6;
+    doFlash(TIER_COLOR[tier], 0.8, 300);
+    beat(tier);
+    sfx.sample?.('sfx-cutin', { gain: 1 });
+    sfx.sample?.(`voice-m${index}`, { gain: 1.35, at: 0.2 });
+    vibrate(60);
+    const band = cutIn(label, tier);
+    await band.enter();
+    burst(W() / 2, H() * 0.45, tier, 60 + tier * 20, 900);
+    for (let i = 0; i < 20; i += 1) later(() => spawn('glint', tx.glint, { x: rand(0, W()), y: rand(0, H()), life: rand(0.25, 0.5), size: rand(0.25, 0.6), fade: 0.01 }), i * 50);
+    if (raised) {
+      await wait(350);
+      const name = ['', 'チャンス', '激アツ', '大当たり', '超大当たり'][tier];
+      const up = await slam(`${name}昇格！`, tier, band.y + band.height * 1.15, H() * 0.08);
+      strobe(tier, 4);
+      sfx.sample?.('sfx-upgrade', { gain: 0.9 });
+      sfx.sample?.('voice-chance', { gain: 1.3, at: 0.1 });
+      await wait(900);
+      up.leave();
+    } else {
+      await wait(1000);
+    }
+    await band.leave();
+    await tween(world, { alpha: 0 }, 220);
+  }
+
+  // ---- 週の結果発表 ----
+  // opts: { title, cols: [{ label, value }], total, tier, sfx, wait, waitTap, vibrate }
+  async function weekly({ title, cols, total, tier, sfx, wait, waitTap, vibrate }) {
+    setColor(0);
+    canvas.style.opacity = '1';
+    ringAlpha = 0.15;
+    ringSpeed = 0.6;
+    rays.alpha = 0.1;
+    bloom.bloomScale = 0.7;
+    sfx.sample?.('voice-weekly', { gain: 1.35 });
+    const head = await slam(title, 3, H() * 0.14, H() * 0.06);
+    const band = cutIn('結果発表', 0);
+    sfx.sample?.('sfx-cutin', { gain: 1 });
+    await band.enter();
+    await wait(900);
+    await band.leave();
+
+    // 3つの数字を、保証表の列の順に1つずつ
+    sfx.sample?.('sfx-drumroll', { gain: 0.9 });
+    const rowW = Math.min(W() * 0.86, 460);
+    const rowH = Math.min(H() * 0.09, 80);
+    const rows = [];
+    const numberStyle = (size) => ({
+      fontFamily: FONT,
+      fontSize: size,
+      fill: new PIXI.FillGradient({ type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local', colorStops: METAL[3].map((color, i) => ({ offset: [0, 0.34, 0.5, 0.64, 1][i], color })) }),
+      stroke: { color: 0x2a1a00, width: size * 0.12, join: 'round' },
+      dropShadow: { color: 0x000000, blur: 4, distance: 3, alpha: 0.8, angle: Math.PI / 2 },
+    });
+    for (const [i, col] of cols.entries()) {
+      const row = new PIXI.Container();
+      row.position.set(W() * 1.5, H() * (0.3 + i * 0.13));
+      const plate = new PIXI.Graphics()
+        .roundRect(-rowW / 2, -rowH / 2, rowW, rowH, 14)
+        .fill({ color: 0x000000, alpha: 0.55 })
+        .stroke({ color: 0xffffff, width: 2, alpha: 0.5 });
+      // 「ディスカッション」が数字と重ならない大きさにする
+      const name = new PIXI.Text({ text: col.label, style: { fontFamily: 'system-ui, "Hiragino Sans", sans-serif', fontWeight: '800', fontSize: Math.min(rowH * 0.3, rowW * 0.052), fill: 0xffffff }, resolution: 2 });
+      name.anchor.set(0, 0.5);
+      name.x = -rowW / 2 + 20;
+      const value = new PIXI.Text({ text: '0', style: numberStyle(rowH * 0.72), resolution: 2 });
+      value.anchor.set(1, 0.5);
+      value.x = rowW / 2 - rowH * 1.05;
+      const unit = new PIXI.Text({ text: '時間', style: { fontFamily: 'system-ui, "Hiragino Sans", sans-serif', fontWeight: '800', fontSize: rowH * 0.3, fill: 0xffffff }, resolution: 2 });
+      unit.anchor.set(0, 0.5);
+      unit.x = rowW / 2 - rowH * 0.95;
+      row.addChild(plate, name, value, unit);
+      fgLayer.addChild(row);
+      rows.push(row);
+      await tween(row, { x: W() / 2 }, 200, easeOut);
+      // 数字が駆け上がって止まる
+      const steps = Math.min(14, Math.max(6, col.value + 4));
+      for (let k = 0; k < steps; k += 1) {
+        value.text = String(k === steps - 1 ? col.value : Math.floor(Math.random() * Math.max(10, col.value * 2)));
+        if (k % 2 === 0) sfx.sample?.('sfx-tick', { gain: 0.6 });
+        await wait(45 + k * 6);
+      }
+      sfx.sample?.('sfx-stop', { gain: 1 });
+      doFlash(0xffffff, 0.35, 160);
+      shakeAmp = 10;
+      burst(row.x + value.x - value.width / 2, row.y, 3, 20, 400);
+      await wait(250);
+    }
+
+    // 合計を発表
+    await wait(500);
+    setColor(tier);
+    rays.alpha = 0.4;
+    rays2.alpha = tier >= 3 ? 0.22 : 0;
+    ringAlpha = 0.15;
+    ringSpeed = 1.2;
+    bloom.bloomScale = 1;
+    doFlash(0xffffff, 1, 380);
+    shockAt(W() / 2, H() * 0.74, 60);
+    sfx.sample?.('sfx-impact', { gain: 1 });
+    sfx.sample?.(`sfx-fanfare-${tier}`, { gain: 0.95 });
+    sfx.sample?.(`voice-${tier}`, { gain: 1.4, at: 0.15 });
+    vibrate(tier >= 3 ? [80, 60, 80, 60, 300] : [60]);
+    const sum = await slam(`合計 ${total}時間`, tier, H() * 0.74, H() * 0.12);
+    shakeAmp = tier >= 2 ? 30 : 14;
+    strobe(tier, [1, 2, 4, 8, 12][tier]);
+    burst(W() / 2, H() * 0.74, tier, [40, 70, 110, 160, 220][tier], 900 + tier * 150);
+    const until = performance.now() + 2500;
+    const rain = () => {
+      if (performance.now() > until) return;
+      spawn('glint', tx.glint, { x: rand(0, W()), y: rand(0, H()), life: rand(0.25, 0.5), size: rand(0.25, 0.6), fade: 0.01 });
+      if (tier >= 3) {
+        spawn('coin', tx.coin, { x: rand(0, W()), y: -30, vx: rand(-40, 40), vy: rand(250, 450), gravity: 300, life: 3, size: rand(0.16, 0.3), fade: 0.2 }, topLayer);
+      }
+      later(rain, 50);
+    };
+    rain();
+
+    const note = new PIXI.Text({ text: '保証表に書き写そう（タップで閉じる）', style: { fontFamily: 'system-ui, "Hiragino Sans", sans-serif', fontWeight: '700', fontSize: Math.min(18, W() * 0.045), fill: 0xffffff }, resolution: 2 });
+    note.anchor.set(0.5);
+    note.position.set(W() / 2, H() * 0.88);
+    note.alpha = 0;
+    fgLayer.addChild(note);
+    tween(note, { alpha: 0.9 }, 400);
+    await waitTap(7000);
+    sum.leave();
+    head.leave();
+    await tween(world, { alpha: 0 }, 300);
+  }
+
   // ---- 止める ----
   // opts: { tier, shown, pseudo, withPush, values, sub, sfx, wait, waitTap, vibrate }
   async function stop(opts) {
@@ -1022,6 +1160,8 @@ export async function createGL(root) {
   return {
     start,
     stop,
+    milestone,
+    weekly,
     destroy() {
       destroyed = true;
       timers.forEach(clearTimeout);

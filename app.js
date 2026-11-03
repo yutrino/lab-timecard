@@ -1,12 +1,17 @@
 import {
   CATS, CAT_LABEL, startOfDay, addDays, weekInfo, totals, formatDuration, roundHours,
   formatDay, formatTime, timeOnDay, openSession, merge, dedupeOpen, tierFor, streakDays,
+  nextTier, milestoneIndex, milestoneLabel, milestoneRaisesTier, weekTierFor,
 } from './logic.js';
-import { playEffect, warmUp } from './effects/director.js';
+import { playEffect, warmUp, effectPlaying } from './effects/director.js';
 
 const SESSIONS_KEY = 'timecard.sessions';
 const SYNC_URL_KEY = 'timecard.syncUrl';
 const FX_KEY = 'timecard.fx';
+const MILESTONE_KEY = 'timecard.milestone'; // { id, n }：その記録で何個目の節目まで見せたか
+const ANNOUNCED_KEY = 'timecard.announcedWeek'; // 結果発表をした週（月曜0時の時刻）
+const HEAT_NAME = ['通常', 'チャンス', '激アツ', '大当たり', '超大当たり'];
+const TIER_COLOR_NAME = ['青', '緑', '赤', '金', '虹'];
 const SYNC_URL_PATTERN = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
 const STALE_AFTER = 12 * 60 * 60 * 1000; // これより長い記録中は終了の押し忘れとみなす
 const MIN_LENGTH = 60 * 1000;
@@ -77,7 +82,9 @@ function put(session) {
 function start(at) {
   notice = '';
   lastEndedDay = null;
-  put({ id: newId(), start: at, end: null, cat: 'research' });
+  const session = put({ id: newId(), start: at, end: null, cat: 'research' });
+  // 始めた時刻をさかのぼって入れたときも、もう過ぎた節目は出さない
+  writeStorage(MILESTONE_KEY, JSON.stringify({ id: session.id, n: milestoneIndex(Date.now() - at) }));
   playEffect('start', { origin: punchCenter(), streak: streakDays(sessions, Date.now()) }, fxSettings);
 }
 
@@ -125,6 +132,7 @@ function render() {
   const thisWeek = weekInfo(now);
 
   document.body.toggleAttribute('data-running', Boolean(open));
+  renderHeat(open, now);
   setText('todayTotal', formatDuration(totals(sessions, today, addDays(today, 1), now).all));
   setText('weekTotal', formatDuration(totals(sessions, thisWeek.start, thisWeek.end, now).all));
   setText('punch', open ? '研究を止める' : '研究を始める');
@@ -141,6 +149,23 @@ function render() {
   renderWeek(now, today);
   renderSync();
   setText('fxButton', fxSettings.on ? `演出：オン（${fxSettings.sound ? '音あり' : '音なし'}）` : '演出：オフ');
+}
+
+// 記録中は、時間とともに画面の色が上がっていく
+function renderHeat(open, now) {
+  const heat = $('heat');
+  if (!open || !fxSettings.on) {
+    delete document.body.dataset.heat;
+    heat.hidden = true;
+    return;
+  }
+  const elapsed = now - open.start;
+  const tier = tierFor(elapsed);
+  document.body.dataset.heat = String(tier);
+  const next = nextTier(elapsed);
+  const rest = next ? `（${TIER_COLOR_NAME[next.tier]}まであと${formatDuration(next.remaining + 59999)}）` : '';
+  setText('heat', `いま：${HEAT_NAME[tier]}${rest}`);
+  heat.hidden = false;
 }
 
 function renderWeek(now, today) {
@@ -349,6 +374,54 @@ $('addRow').addEventListener('click', () => {
   $('dayRows').lastElementChild.querySelector('.start').focus();
 });
 
+// ---- 記録中の節目 ----
+
+function checkMilestone() {
+  const open = openSession(sessions);
+  if (!open || !fxSettings.on || document.hidden) return;
+  const elapsed = Date.now() - open.start;
+  const n = milestoneIndex(elapsed);
+  let seen = null;
+  try { seen = JSON.parse(readStorage(MILESTONE_KEY) || 'null'); } catch { /* 読めなければ最初から */ }
+  if (!seen || seen.id !== open.id) {
+    // ほかの端末で始めた記録は、いまの節目から数える
+    writeStorage(MILESTONE_KEY, JSON.stringify({ id: open.id, n }));
+    return;
+  }
+  if (n <= seen.n || effectPlaying() || document.querySelector('dialog[open]')) return;
+  writeStorage(MILESTONE_KEY, JSON.stringify({ id: open.id, n }));
+  playEffect('milestone', {
+    index: n, label: milestoneLabel(n), tier: tierFor(elapsed), raised: milestoneRaisesTier(n),
+  }, fxSettings);
+}
+
+// ---- 週の結果発表 ----
+
+function weeklyData(week, now) {
+  const sum = totals(sessions, week.start, week.end, now);
+  return {
+    title: `${week.month}月${week.index}週`,
+    cols: CATS.map((c) => ({ label: CAT_LABEL[c], value: roundHours(sum[c]) })),
+    total: CATS.reduce((n, c) => n + roundHours(sum[c]), 0),
+    tier: weekTierFor(sum.all),
+    all: sum.all,
+  };
+}
+
+// 新しい週に初めて開いたとき、先週の数字を発表してから先週の画面を見せる
+function maybeAnnounceWeek() {
+  const now = Date.now();
+  const thisWeek = weekInfo(now).start;
+  if ((Number(readStorage(ANNOUNCED_KEY)) || 0) >= thisWeek) return;
+  if (!fxSettings.on || document.hidden || effectPlaying() || document.querySelector('dialog[open]')) return;
+  writeStorage(ANNOUNCED_KEY, String(thisWeek));
+  const data = weeklyData(weekInfo(addDays(now, -7)), now);
+  if (data.all === 0) return;
+  weekOffset = -1;
+  render();
+  playEffect('weekly', data, fxSettings);
+}
+
 // ---- 演出の設定 ----
 
 function saveFxSettings() {
@@ -379,6 +452,13 @@ $('fxDialog').addEventListener('click', (event) => {
   $('fxDialog').close();
   if (button.dataset.demo === 'start') {
     playEffect('start', { origin: punchCenter(), streak: 3 }, settings);
+  } else if (button.dataset.demo === 'milestone') {
+    playEffect('milestone', { index: 3, label: milestoneLabel(3), tier: 3, raised: true }, settings);
+  } else if (button.dataset.demo === 'weekly') {
+    const data = weeklyData(weekInfo(addDays(Date.now(), -7)), Date.now());
+    playEffect('weekly', data.all > 0 ? data : {
+      ...data, cols: data.cols.map((c, i) => ({ ...c, value: [3, 18, 1][i] })), total: 22, tier: 3,
+    }, settings);
   } else {
     const tier = Number(button.dataset.demo);
     playEffect('stop', { length: DEMO_LENGTH[tier], today: DEMO_LENGTH[tier], tier }, settings);
@@ -499,10 +579,12 @@ render();
 promptIfStale();
 sync();
 
-setInterval(() => { render(); promptIfStale(); }, 15 * 1000);
+setTimeout(() => { checkMilestone(); maybeAnnounceWeek(); }, 1500); // 同期で記録が届くのを少し待つ
+
+setInterval(() => { render(); promptIfStale(); checkMilestone(); maybeAnnounceWeek(); }, 15 * 1000);
 setInterval(() => { if (!document.hidden) sync(); }, 60 * 1000);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { render(); promptIfStale(); sync(); }
+  if (!document.hidden) { render(); promptIfStale(); sync(); setTimeout(() => { checkMilestone(); maybeAnnounceWeek(); }, 1500); }
 });
 window.addEventListener('online', sync);
 

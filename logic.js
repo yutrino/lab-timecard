@@ -130,3 +130,35 @@ export function streakDays(sessions, now) {
   for (let day = startOfDay(now); days.has(day) && count < 366; day = addDays(day, -1)) count += 1;
   return count;
 }
+
+// 次の色と、そこまでの残り時間。虹なら null
+export function nextTier(ms) {
+  const tier = tierFor(ms);
+  return tier >= TIER_MIN.length - 1 ? null : { tier: tier + 1, remaining: TIER_MIN[tier + 1] - ms };
+}
+
+// 記録中の節目（分）。30分と、1時間ごとに8時間まで
+export const MILESTONES = [30, 60, 120, 180, 240, 300, 360, 420, 480];
+
+// いくつ目の節目まで超えたか（0 はまだ）
+export function milestoneIndex(ms) {
+  return MILESTONES.filter((m) => ms >= m * MINUTE).length;
+}
+
+export function milestoneLabel(index) {
+  const m = MILESTONES[index - 1];
+  return m < 60 ? `${m}分突破！` : `${m / 60}時間突破！`;
+}
+
+// その節目で色が上がるか
+export function milestoneRaisesTier(index) {
+  const m = MILESTONES[index - 1] * MINUTE;
+  return TIER_MIN.includes(m);
+}
+
+// 週の合計の色：5・10・20・30時間で上がる
+const WEEK_TIER_MIN = [0, 5, 10, 20, 30].map((h) => h * HOUR);
+
+export function weekTierFor(ms) {
+  return WEEK_TIER_MIN.findLastIndex((min) => ms >= min);
+}

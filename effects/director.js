@@ -38,6 +38,8 @@ export function warmUp(settings) {
   idle(() => { loadGL().catch(() => {}); });
 }
 
+export const effectPlaying = () => current != null;
+
 // settings: { on, sound }
 export function playEffect(name, data, settings) {
   if (!settings.on) return;
@@ -366,6 +368,57 @@ function createStage(controller, sfx, reduced) {
 // ---- 場面 ----
 
 const SCENES = {
+  // data: { index, label, tier, raised }
+  async milestone(fx, data) {
+    fx.dim(0.75);
+    const gl = await fx.prepareGL(800);
+    if (gl) {
+      fx.hideStage();
+      await gl.milestone({ ...data, sfx: fx.sfx, wait: fx.wait, vibrate: fx.vibrate });
+      return;
+    }
+    // WebGL が使えないときの CSS 版
+    fx.lines(data.tier);
+    fx.leds(data.tier, true);
+    fx.flash(data.tier);
+    const band = fx.band(data.label, data.tier);
+    fx.shake(1.2);
+    fx.sfx.hit();
+    fx.burst(data.tier, undefined, 0.6);
+    if (data.raised) {
+      await fx.wait(400);
+      fx.stamp(`${['', 'チャンス', '激アツ', '大当たり', '超大当たり'][data.tier]}昇格！`);
+      fx.strobe(data.tier, 4);
+      fx.sfx.up(data.tier);
+    }
+    await fx.wait(1500);
+    fx.leave(band);
+    await fx.wait(250);
+  },
+
+  // data: { title, cols: [{ label, value }], total, tier }
+  async weekly(fx, data) {
+    fx.dim(0.94, 300);
+    const gl = await fx.prepareGL(1500);
+    if (gl) {
+      fx.hideStage();
+      await gl.weekly({ ...data, sfx: fx.sfx, wait: fx.wait, waitTap: (ms) => fx.waitTap(ms), vibrate: fx.vibrate });
+      return;
+    }
+    // WebGL が使えないときの CSS 版
+    const band = fx.band(`${data.title} 結果発表`, 0);
+    fx.sfx.hit();
+    await fx.wait(1300);
+    fx.leave(band);
+    fx.lines(data.tier);
+    fx.leds(data.tier, true);
+    fx.calmText(`合計 ${data.total}時間`, data.cols.map((c) => `${c.label} ${c.value}`).join('・'));
+    fx.strobe(data.tier, [1, 2, 4, 8, 12][data.tier]);
+    fx.burst(data.tier);
+    fx.sfx.win(data.tier);
+    await fx.waitTap(6000);
+  },
+
   // data: { origin: {x, y}, streak }
   async start(fx, { origin, streak }) {
     const tier = streak >= 5 ? 3 : streak >= 3 ? 2 : streak >= 2 ? 1 : 0;
@@ -538,6 +591,16 @@ const SCENES = {
 
 // 「視差効果を減らす」がオンのとき：揺れ・光・粒子なしで文字だけ
 const CALM = {
+  async milestone(fx, { label }) {
+    fx.dim(0.7);
+    fx.calmText(label.replace('！', ''));
+    await fx.wait(1400);
+  },
+  async weekly(fx, { title, cols, total }) {
+    fx.dim(0.85);
+    fx.calmText(`${title}：合計 ${total}時間`, cols.map((c) => `${c.label} ${c.value}`).join('・'));
+    await fx.waitTap(6000);
+  },
   async start(fx, { streak }) {
     fx.dim(0.7);
     fx.calmText('研究スタート', streak >= 2 ? `${streak}日連続` : '');

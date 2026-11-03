@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   weekInfo, totals, formatDuration, roundHours, merge, dedupeOpen, timeOnDay, formatDay,
-  tierFor, streakDays,
+  tierFor, streakDays, nextTier, milestoneIndex, milestoneLabel, milestoneRaisesTier, weekTierFor,
 } from '../logic.js';
 
 const at = (y, m, d, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -96,4 +96,25 @@ test('連続日数はきょうから途切れるまで数える', () => {
   assert.equal(streakDays([s(1), s(3)], at(2026, 11, 3, 15)), 1);
   assert.equal(streakDays([s(1), s(2)], at(2026, 11, 3, 15)), 0);
   assert.equal(streakDays([s(2, { deleted: true }), s(3)], at(2026, 11, 3, 15)), 1);
+});
+
+test('次の色までの残り時間', () => {
+  const min = 60 * 1000;
+  assert.deepEqual(nextTier(10 * min), { tier: 1, remaining: 20 * min });
+  assert.deepEqual(nextTier(100 * min), { tier: 3, remaining: 20 * min });
+  assert.equal(nextTier(300 * min), null);
+});
+
+test('記録中の節目', () => {
+  const min = 60 * 1000;
+  assert.deepEqual([0, 29, 30, 59, 60, 119, 120, 479, 480, 900].map((m) => milestoneIndex(m * min)), [0, 0, 1, 1, 2, 2, 3, 8, 9, 9]);
+  assert.equal(milestoneLabel(1), '30分突破！');
+  assert.equal(milestoneLabel(2), '1時間突破！');
+  assert.equal(milestoneLabel(9), '8時間突破！');
+  assert.deepEqual([1, 2, 3, 4, 5, 6].map(milestoneRaisesTier), [true, true, true, false, true, false]);
+});
+
+test('週の合計の色', () => {
+  const hour = 60 * 60 * 1000;
+  assert.deepEqual([0, 4.9, 5, 10, 19, 20, 30, 50].map((h) => weekTierFor(h * hour)), [0, 0, 1, 2, 2, 3, 4, 4]);
 });
