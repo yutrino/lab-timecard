@@ -12,6 +12,10 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="effects/effects.css">
+  <!-- 演出用の太い書体。演出で使う文字だけを読み込む -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap&text=%E3%81%8A%E3%81%A4%E3%81%8B%E3%82%8C%E3%81%95%E3%81%BE%EF%BC%81%E3%83%8A%E3%82%A4%E3%82%B9%E7%A0%94%E7%A9%B6%E6%BF%80%E3%82%A2%E3%83%84%E5%A4%A7%E5%BD%93%E3%81%9F%E3%82%8A%E8%B6%85%E3%83%AA%E3%83%BC%E3%83%81%E3%82%BF%E3%83%88%E6%97%A5%E9%80%A3%E7%B6%9A0123456789%3A">
 </head>
 <body>
   <main>
@@ -72,6 +76,7 @@
     </section>
 
     <footer>
+      <button id="fxButton" class="link" type="button">演出</button>
       <button id="syncButton" class="link" type="button">同期を設定する</button>
     </footer>
   </main>
@@ -117,6 +122,25 @@
         <button type="submit" class="primary">保存</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="fxDialog" aria-labelledby="fxTitle">
+    <h2 id="fxTitle">演出</h2>
+    <label class="check"><input id="fxOn" type="checkbox"> 演出を出す</label>
+    <label class="check"><input id="fxSound" type="checkbox"> 音を出す</label>
+    <p class="note">演出は画面のどこかをタップすると飛ばせます。端末の「視差効果を減らす」がオンのときは、文字だけの控えめな演出になります。</p>
+    <p class="demo-label">試しに見る</p>
+    <p class="demo">
+      <button type="button" class="secondary" data-demo="start">始める</button>
+      <button type="button" class="secondary" data-demo="0">青</button>
+      <button type="button" class="secondary" data-demo="1">緑</button>
+      <button type="button" class="secondary" data-demo="2">赤</button>
+      <button type="button" class="secondary" data-demo="3">金</button>
+      <button type="button" class="secondary" data-demo="4">虹</button>
+    </p>
+    <div class="dialog-actions">
+      <button type="button" class="primary" data-close>閉じる</button>
+    </div>
   </dialog>
 
   <script type="module" src="app.js"></script>

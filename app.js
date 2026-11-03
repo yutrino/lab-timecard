@@ -1,10 +1,12 @@
 import {
   CATS, CAT_LABEL, startOfDay, addDays, weekInfo, totals, formatDuration, roundHours,
-  formatDay, formatTime, timeOnDay, openSession, merge, dedupeOpen,
+  formatDay, formatTime, timeOnDay, openSession, merge, dedupeOpen, tierFor, streakDays,
 } from './logic.js';
+import { playEffect } from './effects/director.js';
 
 const SESSIONS_KEY = 'timecard.sessions';
 const SYNC_URL_KEY = 'timecard.syncUrl';
+const FX_KEY = 'timecard.fx';
 const SYNC_URL_PATTERN = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
 const STALE_AFTER = 12 * 60 * 60 * 1000; // これより長い記録中は終了の押し忘れとみなす
 const MIN_LENGTH = 60 * 1000;
@@ -22,6 +24,7 @@ let syncing = false;
 let syncAgain = false;
 let syncTimer = null;
 let syncState = { failed: false, at: null };
+let fxSettings = loadFxSettings();
 
 // ---- 保存 ----
 
@@ -39,6 +42,14 @@ function loadSessions() {
     return Array.isArray(list) ? list : [];
   } catch {
     return [];
+  }
+}
+
+function loadFxSettings() {
+  try {
+    return { on: true, sound: false, ...JSON.parse(readStorage(FX_KEY) || '{}') };
+  } catch {
+    return { on: true, sound: false };
   }
 }
 
@@ -67,6 +78,7 @@ function start(at) {
   notice = '';
   lastEndedDay = null;
   put({ id: newId(), start: at, end: null, cat: 'research' });
+  playEffect('start', { origin: punchCenter(), streak: streakDays(sessions, Date.now()) }, fxSettings);
 }
 
 function finish(open, at) {
@@ -78,7 +90,19 @@ function finish(open, at) {
     notice = `${formatTime(open.start)}〜${formatTime(at)} を「${CAT_LABEL[open.cat]}」で記録しました`;
     lastEndedDay = startOfDay(open.start);
     put({ ...open, end: at });
+    const today = startOfDay(Date.now());
+    const length = at - open.start;
+    playEffect('stop', {
+      length,
+      today: totals(sessions, today, addDays(today, 1), Date.now()).all,
+      tier: tierFor(length),
+    }, fxSettings);
   }
+}
+
+function punchCenter() {
+  const rect = $('punch').getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
 $('punch').addEventListener('click', () => {
@@ -116,6 +140,7 @@ function render() {
 
   renderWeek(now, today);
   renderSync();
+  setText('fxButton', fxSettings.on ? `演出：オン（${fxSettings.sound ? '音あり' : '音なし'}）` : '演出：オフ');
 }
 
 function renderWeek(now, today) {
@@ -322,6 +347,41 @@ $('addRow').addEventListener('click', () => {
   $('dayRows').insertAdjacentHTML('beforeend', rowHtml(null));
   updateDayEmpty();
   $('dayRows').lastElementChild.querySelector('.start').focus();
+});
+
+// ---- 演出の設定 ----
+
+function saveFxSettings() {
+  fxSettings = { on: $('fxOn').checked, sound: $('fxSound').checked };
+  writeStorage(FX_KEY, JSON.stringify(fxSettings));
+  $('fxSound').disabled = !fxSettings.on;
+  render();
+}
+
+$('fxButton').addEventListener('click', () => {
+  $('fxOn').checked = fxSettings.on;
+  $('fxSound').checked = fxSettings.sound;
+  $('fxSound').disabled = !fxSettings.on;
+  $('fxDialog').showModal();
+});
+
+$('fxOn').addEventListener('change', saveFxSettings);
+$('fxSound').addEventListener('change', saveFxSettings);
+
+// 記録は変えずに演出だけを見る
+const DEMO_LENGTH = [20, 45, 95, 165, 290].map((m) => m * 60 * 1000);
+
+$('fxDialog').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-demo]');
+  if (!button) return;
+  const settings = { ...fxSettings, on: true };
+  $('fxDialog').close();
+  if (button.dataset.demo === 'start') {
+    playEffect('start', { origin: punchCenter(), streak: 3 }, settings);
+  } else {
+    const tier = Number(button.dataset.demo);
+    playEffect('stop', { length: DEMO_LENGTH[tier], today: DEMO_LENGTH[tier], tier }, settings);
+  }
 });
 
 // ---- 同期 ----

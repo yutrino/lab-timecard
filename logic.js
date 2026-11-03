@@ -115,3 +115,18 @@ export function dedupeOpen(sessions, now) {
       : s
   ));
 }
+
+// 演出の信頼度。今回の研究時間で決まる（0:青 1:緑 2:赤 3:金 4:虹）。
+const TIER_MIN = [0, 30 * MINUTE, HOUR, 2 * HOUR, 4 * HOUR];
+
+export function tierFor(ms) {
+  return TIER_MIN.findLastIndex((min) => ms >= min);
+}
+
+// きょうから数えて、何日続けて記録があるか
+export function streakDays(sessions, now) {
+  const days = new Set(sessions.filter((s) => !s.deleted).map((s) => startOfDay(s.start)));
+  let count = 0;
+  for (let day = startOfDay(now); days.has(day) && count < 366; day = addDays(day, -1)) count += 1;
+  return count;
+}

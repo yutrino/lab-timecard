@@ -1,0 +1,157 @@
+/* 演出の重ね絵。画面のテーマに関係なく、暗い舞台の上に派手な色を載せる。 */
+
+.fx {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: hidden;
+  color: #fff;
+  font-family: "Dela Gothic One", system-ui, -apple-system, "Hiragino Sans", sans-serif;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.fx-shade, .fx-flash, .fx-canvas { position: absolute; inset: 0; pointer-events: none; }
+.fx-shade {
+  background: radial-gradient(circle at 50% 45%, #1b1030, #05040a 70%);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+}
+.fx-flash { background: #fff; opacity: 0; }
+.fx-canvas { width: 100%; height: 100%; }
+
+/* 集中線 */
+.fx-lines {
+  position: absolute;
+  inset: -50%;
+  opacity: 0;
+  background: repeating-conic-gradient(from 0deg, var(--line, #fff) 0deg 1.4deg, transparent 1.4deg 8deg);
+  -webkit-mask: radial-gradient(circle, transparent 14%, #000 45%);
+  mask: radial-gradient(circle, transparent 14%, #000 45%);
+  transition: opacity 0.2s;
+  animation: fx-spin 8s linear infinite;
+  pointer-events: none;
+}
+.fx-lines.on { opacity: 0.4; }
+
+.fx-stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.fx-stage > * { grid-area: 1 / 1; margin: 0; }
+
+/* 色ごとの絵の具 */
+[data-tier="blue"] { --a: #1746c4; --b: #5ea2ff; --fill: linear-gradient(180deg, #fff 10%, #9cc4ff 45%, #2f6bff 100%); }
+[data-tier="green"] { --a: #0f7a39; --b: #4ef08a; --fill: linear-gradient(180deg, #fff 10%, #a6ffc6 45%, #18b552 100%); }
+[data-tier="red"] { --a: #b3101f; --b: #ff4a5a; --fill: linear-gradient(180deg, #fff 5%, #ffd23f 40%, #ff2d3f 75%, #a0001a 100%); }
+[data-tier="gold"] { --a: #a86e00; --b: #ffd23f; --fill: linear-gradient(180deg, #fffbe0 0%, #ffe066 30%, #d99a00 52%, #fff1a8 70%, #b07800 100%); }
+[data-tier="rainbow"] {
+  --a: #7a2cff;
+  --b: #ff4fd8;
+  /* 半分ずつに全色が入るよう2周させ、背景をずらして流す */
+  --fill: linear-gradient(90deg, #ff3b3b, #ffb000, #ffe600, #2ee66b, #2fa8ff, #8b5cff, #ff4fd8, #ff3b3b, #ffb000, #ffe600, #2ee66b, #2fa8ff, #8b5cff, #ff4fd8, #ff3b3b);
+}
+
+/* カットインの帯 */
+.fx-band {
+  width: 140%;
+  padding: 0.35em 0;
+  text-align: center;
+  font-size: clamp(2.4rem, 12vw, 5rem);
+  line-height: 1.2;
+  transform: translateX(110%);
+  background: linear-gradient(180deg, var(--b), var(--a));
+  border-block: 0.1em solid #fff;
+  box-shadow: 0 0 1.2em var(--b), inset 0 0 0.6em rgb(255 255 255 / 0.4);
+}
+.fx-band[data-tier="rainbow"] { background: var(--fill); background-size: 200% 100%; animation: fx-slide 1s linear infinite; }
+.fx-band span {
+  display: inline-block;
+  -webkit-text-stroke: 0.07em #000;
+  paint-order: stroke fill;
+  text-shadow: 0 0.08em 0 #000;
+  font-style: italic;
+}
+
+/* 数字リール */
+.fx-reels {
+  display: flex;
+  align-items: center;
+  gap: 0.12em;
+  font-size: clamp(3.5rem, 18vw, 9rem);
+  line-height: 1;
+}
+.fx-reel {
+  min-width: 0.85em;
+  padding: 0.08em 0.12em;
+  border: 0.05em solid var(--b);
+  border-radius: 0.12em;
+  background: linear-gradient(180deg, #fff, #ddd 50%, #fff);
+  color: #111;
+  text-align: center;
+  box-shadow: 0 0 0.35em var(--b), inset 0 -0.1em 0.2em rgb(0 0 0 / 0.25);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.fx-reel.spin { filter: blur(1.5px); animation: fx-roll 0.09s linear infinite; }
+.fx-reel.spin.reach { animation: fx-roll 0.09s linear infinite, fx-glow 0.45s ease-in-out infinite alternate; }
+.fx-colon { color: #fff; text-shadow: 0 0 0.3em var(--b); }
+
+/* 結果 */
+.fx-result { text-align: center; padding: 0 1rem; }
+.fx-big {
+  margin: 0;
+  /* 文字数に合わせて画面幅いっぱいに */
+  font-size: min(7rem, calc(84vw / var(--n, 7)));
+  line-height: 1.15;
+  white-space: nowrap;
+  font-style: italic;
+  background: var(--fill);
+  background-size: 100% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-stroke: 0.035em #000;
+  filter: drop-shadow(0 0.05em 0 #000) drop-shadow(0 0 0.25em var(--b));
+  opacity: 0;
+}
+.fx-big[data-tier="rainbow"] { background-size: 200% 100%; animation: fx-slide 1.2s linear infinite; }
+.fx-sub {
+  margin: 0.75rem 0 0;
+  font-family: system-ui, -apple-system, "Hiragino Sans", sans-serif;
+  font-size: 1.125rem;
+  font-weight: 700;
+  opacity: 0;
+  text-shadow: 0 0 0.5em #000;
+}
+
+.fx-stamp {
+  align-self: end;
+  margin-bottom: 24vh !important;
+  padding: 0.15em 0.5em;
+  border: 0.12em solid #ffd23f;
+  border-radius: 0.3em;
+  color: #ffd23f;
+  font-size: clamp(1.8rem, 9vw, 3rem);
+  text-shadow: 0 0 0.4em #ff9d00;
+  opacity: 0;
+}
+
+.fx-calm {
+  font-family: system-ui, -apple-system, "Hiragino Sans", sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+}
+
+@keyframes fx-spin { to { transform: rotate(360deg); } }
+@keyframes fx-roll { from { transform: translateY(-10%); } to { transform: translateY(10%); } }
+@keyframes fx-glow { to { box-shadow: 0 0 1em var(--b), 0 0 2em var(--b); border-color: #fff; } }
+@keyframes fx-slide { to { background-position: 200% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-lines, .fx-band, .fx-big, .fx-reel { animation: none !important; }
+}

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   weekInfo, totals, formatDuration, roundHours, merge, dedupeOpen, timeOnDay, formatDay,
+  tierFor, streakDays,
 } from '../logic.js';
 
 const at = (y, m, d, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -79,4 +80,20 @@ test('記録中が2つあれば早いほうだけ残す', () => {
   assert.equal(out.find((s) => s.id === 'late').deleted, true);
   assert.equal(out.find((s) => s.id === 'early').deleted, undefined);
   assert.equal(out.find((s) => s.id === 'done').deleted, undefined);
+});
+
+test('信頼度は今回の研究時間で決まる', () => {
+  const min = 60 * 1000;
+  assert.deepEqual(
+    [0, 29 * min, 30 * min, 59 * min, 60 * min, 119 * min, 120 * min, 239 * min, 240 * min, 600 * min].map(tierFor),
+    [0, 0, 1, 1, 2, 2, 3, 3, 4, 4],
+  );
+});
+
+test('連続日数はきょうから途切れるまで数える', () => {
+  const s = (d, extra = {}) => ({ id: String(d), start: at(2026, 11, d, 10), end: at(2026, 11, d, 12), ...extra });
+  assert.equal(streakDays([s(1), s(2), s(3)], at(2026, 11, 3, 15)), 3);
+  assert.equal(streakDays([s(1), s(3)], at(2026, 11, 3, 15)), 1);
+  assert.equal(streakDays([s(1), s(2)], at(2026, 11, 3, 15)), 0);
+  assert.equal(streakDays([s(2, { deleted: true }), s(3)], at(2026, 11, 3, 15)), 1);
 });
