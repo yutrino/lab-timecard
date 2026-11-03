@@ -60,6 +60,19 @@ export function createParticles(canvas) {
         ctx.arc(-p.size * 0.3, -p.size * 0.3, p.size * 0.3, 0, TAU);
         ctx.fill();
         break;
+      case 'glint': {
+        // 十字のきらめき。現れて消える
+        const k = Math.sin(Math.PI * (1 - p.life / p.max));
+        const r = p.size * k;
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.moveTo(0, -r); ctx.lineTo(r * 0.15, -r * 0.15); ctx.lineTo(r, 0); ctx.lineTo(r * 0.15, r * 0.15);
+        ctx.lineTo(0, r); ctx.lineTo(-r * 0.15, r * 0.15); ctx.lineTo(-r, 0); ctx.lineTo(-r * 0.15, -r * 0.15);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
       case 'ring': {
         const k = 1 - p.life / p.max;
         ctx.strokeStyle = p.color;
@@ -141,6 +154,24 @@ export function createParticles(canvas) {
           color: pick(colors),
           life: 3,
           delay: rand(0, 1.2),
+        });
+      }
+    },
+
+    // 画面のあちこちで一瞬きらめく
+    twinkle({ count, seconds }) {
+      for (let i = 0; i < count; i += 1) {
+        add({
+          kind: 'glint',
+          x: rand(0, innerWidth),
+          y: rand(0, innerHeight),
+          size: rand(10, 26),
+          color: pick(['#ffffff', '#fff6c2', '#c9e6ff']),
+          life: rand(0.25, 0.5),
+          fade: 0.01,
+          spin: 0,
+          rot: Math.PI / 4 * Math.round(Math.random()),
+          delay: rand(0, seconds),
         });
       }
     },

@@ -60,10 +60,10 @@ function createStage(controller, sfx, reduced) {
   const root = document.createElement('div');
   root.className = 'fx';
   root.setAttribute('aria-hidden', 'true');
-  root.innerHTML = '<div class="fx-shade"></div><div class="fx-lines"></div>'
-    + '<canvas class="fx-canvas"></canvas><div class="fx-stage"></div><div class="fx-flash"></div>';
+  root.innerHTML = '<div class="fx-shade"></div><div class="fx-glow"></div><div class="fx-rays"></div><div class="fx-lines"></div>'
+    + '<canvas class="fx-canvas"></canvas><div class="fx-stage"></div><div class="fx-leds"></div><div class="fx-flash"></div>';
   document.body.append(root);
-  const [shade, lines, canvas, stage, flashLayer] = root.children;
+  const [shade, glow, rays, lines, canvas, stage, leds, flashLayer] = root.children;
   const particles = createParticles(canvas);
   const timers = new Set();
 
@@ -109,11 +109,37 @@ function createStage(controller, sfx, reduced) {
       );
     },
 
-    flash() {
+    // 画面全体の光。間隔は FLASH_GAP より詰めない
+    flash(tier = null) {
       const now = performance.now();
       if (now - lastFlash < FLASH_GAP) return;
       lastFlash = now;
-      flashLayer.animate([{ opacity: 0 }, { opacity: 0.85 }, { opacity: 0 }], { duration: 260 });
+      flashLayer.style.background = tier == null ? '#fff' : LINE_COLOR[TIERS[tier]];
+      flashLayer.animate([{ opacity: 0 }, { opacity: tier == null ? 0.9 : 0.7 }, { opacity: 0 }], { duration: 280 });
+    },
+
+    // 画面のふちを走る電飾。fast でリーチ中の速さになる
+    leds(tier, fast = false) {
+      leds.dataset.tier = TIERS[tier];
+      leds.classList.add('on');
+      leds.classList.toggle('fast', fast);
+    },
+
+    // 中央から色の光が脈打つ（1秒に2回）
+    glow(tier) {
+      glow.dataset.tier = TIERS[tier];
+      glow.classList.add('on');
+    },
+
+    // 結果の後ろで回る太い光線
+    rays(tier) {
+      rays.dataset.tier = TIERS[tier];
+      rays.classList.add('on');
+    },
+
+    // 画面のあちこちできらめく
+    twinkle(count, seconds) {
+      particles.twinkle({ count, seconds });
     },
 
     // 斜めの帯が右から飛び込む
@@ -163,6 +189,7 @@ function createStage(controller, sfx, reduced) {
           cell.textContent = values[i];
           cell.classList.remove('spin', 'reach');
           cell.animate([{ transform: 'translateY(-18%)' }, { transform: 'translateY(6%)' }, { transform: 'none' }], { duration: 180 });
+          cell.animate([{ filter: 'brightness(2.6)', boxShadow: '0 0 1.2em #fff' }, {}], { duration: 320 });
         },
         slow(i) {
           state[i].slowing = true;
@@ -215,7 +242,15 @@ function createStage(controller, sfx, reduced) {
         speed: 380 + tier * 130,
       });
       if (tier >= 3 && scale >= 1) {
-        particles.rain({ count: tier === 4 ? 130 : 70, kinds: tier === 4 ? ['coin', 'star'] : ['coin'], colors: COLORS[id] });
+        particles.rain({ count: tier === 4 ? 160 : 90, kinds: tier === 4 ? ['coin', 'star'] : ['coin'], colors: COLORS[id] });
+      }
+      if (tier >= 2 && scale >= 1) {
+        // 少し遅れて左右でもう一度はじける
+        for (const [dx, delay] of [[-0.28, 350], [0.28, 550]]) {
+          later(() => particles.burst(origin.x + innerWidth * dx, origin.y - innerHeight * 0.05, {
+            count: Math.round([0, 0, 40, 60, 90][tier]), kinds, colors: COLORS[id], speed: 300 + tier * 100,
+          }), delay);
+        }
       }
     },
 
@@ -241,12 +276,15 @@ const SCENES = {
   // data: { origin: {x, y}, streak }
   async start(fx, { origin, streak }) {
     const tier = streak >= 5 ? 3 : streak >= 3 ? 2 : streak >= 2 ? 1 : 0;
-    fx.dim(0.7);
+    fx.dim(0.75);
     fx.ring(origin, tier);
+    fx.flash(tier);
     fx.sfx.start();
     fx.vibrate(40);
     fx.lines(tier);
+    fx.leds(tier);
     fx.band('研究スタート！', tier);
+    fx.twinkle(30, 1.4);
     await fx.wait(700);
     if (streak >= 2) {
       fx.stamp(`${streak}日連続！`);
@@ -267,6 +305,8 @@ const SCENES = {
     fx.dim(0.94);
     await fx.wait(250); // 溜め
     fx.lines(shown);
+    fx.leds(shown);
+    fx.flash(shown);
     const band = fx.band('リーチ', shown);
     fx.shake(1.2);
     fx.sfx.hit();
@@ -283,12 +323,16 @@ const SCENES = {
     fx.sfx.tick();
 
     reels.slow(1);
+    fx.leds(shown, true);
+    fx.glow(shown);
     while (shown < tier) {
       await fx.wait(600);
       shown += 1;
       reels.color(shown);
       fx.lines(shown);
-      fx.flash();
+      fx.leds(shown, true);
+      fx.glow(shown);
+      fx.flash(shown);
       fx.shake(0.6);
       fx.sfx.up(shown);
       fx.vibrate(30);
@@ -300,6 +344,9 @@ const SCENES = {
 
     fx.leave(reels.el, 'translateY(-40%) scale(.6)');
     fx.result(tier, `今回 ${formatDuration(length)}・きょう ${formatDuration(today)}`);
+    fx.rays(tier);
+    fx.leds(tier, true);
+    fx.twinkle(20 + tier * 25, 2.2);
     fx.flash();
     fx.shake(tier >= 2 ? 2 : 1);
     fx.burst(tier);
