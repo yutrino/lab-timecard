@@ -83,6 +83,9 @@
 .fx-leds.on.fast { animation-duration: 0.18s; }
 .fx-leds[data-tier="rainbow"].on { animation: fx-chase 0.18s steps(2) infinite, fx-hue 1s linear infinite; }
 
+/* 無音の暗転。結果の直前に一瞬すべてを消す */
+.fx-black { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+
 .fx-stage {
   position: absolute;
   inset: 0;
@@ -206,6 +209,26 @@
   font-size: 2.5rem;
   font-weight: 800;
 }
+
+/* 押せ！ボタン */
+.fx-push {
+  display: grid;
+  place-items: center;
+  width: min(52vw, 14rem);
+  aspect-ratio: 1;
+  border: 0.5rem solid #fff;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0 8%, var(--b) 30%, var(--a) 75%);
+  box-shadow: 0 0 0 0.5rem var(--a), 0 0 3rem var(--b), inset 0 -1rem 2rem rgb(0 0 0 / 0.35);
+  font-size: clamp(2.6rem, 14vw, 4.5rem);
+  align-self: end;
+  margin-bottom: 8vh !important;
+  animation: fx-push-throb 0.28s ease-in-out infinite alternate;
+}
+.fx-push span { -webkit-text-stroke: 0.07em #000; paint-order: stroke fill; text-shadow: 0 0.08em 0 #000; }
+@keyframes fx-push-throb { to { box-shadow: 0 0 0 1rem var(--b), 0 0 5rem var(--b), inset 0 -1rem 2rem rgb(0 0 0 / 0.35); filter: brightness(1.25); } }
+
+.fx-callout { opacity: 0; }
 
 @keyframes fx-spin { to { transform: rotate(360deg); } }
 @keyframes fx-roll { from { transform: translateY(-10%); } to { transform: translateY(10%); } }

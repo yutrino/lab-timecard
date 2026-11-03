@@ -78,6 +78,38 @@ export function createSound() {
       [12, 16, 19, 24].forEach((s, i) => tone(note(s), 0.14, { type: 'triangle', gain: 0.07, at: 0.48 + i * 0.06 }));
     },
 
+    // 心音。暗転中の溜め
+    heartbeat() {
+      for (const at of [0, 0.28, 0.9, 1.18]) {
+        tone(70, 0.18, { type: 'sine', gain: 0.7, to: 40, at });
+        noise(0.1, { gain: 0.15, freq: 180, at });
+      }
+    },
+
+    // 「押せ！」の間ずっと上がり続ける音
+    riser(seconds) {
+      const a = context();
+      if (!a) return;
+      const t = a.currentTime;
+      const osc = a.createOscillator();
+      const env = a.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(110, t);
+      osc.frequency.exponentialRampToValueAtTime(1760, t + seconds);
+      env.gain.setValueAtTime(0.0001, t);
+      env.gain.exponentialRampToValueAtTime(0.05, t + seconds);
+      osc.connect(env).connect(master);
+      osc.start(t);
+      osc.stop(t + seconds);
+      for (let i = 0; i < seconds * 6; i += 1) tone(880 + i * 40, 0.05, { type: 'square', gain: 0.03, at: i / 6 });
+    },
+
+    // ボタンを押した「ガコン」
+    push() {
+      tone(160, 0.3, { type: 'square', gain: 0.25, to: 45 });
+      noise(0.25, { gain: 0.4, freq: 1200 });
+    },
+
     // リーチの「ドン」
     hit() {
       tone(140, 0.5, { type: 'sine', gain: 0.6, to: 38 });

@@ -1,5 +1,5 @@
 // 電波がなくても開けるようにする。キャッシュを先に返し、裏で新しい版に入れ替える。
-const CACHE = 'timecard-v3';
+const CACHE = 'timecard-v4';
 const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'logic.js',
   'effects/director.js', 'effects/particles.js', 'effects/sound.js', 'effects/effects.css',

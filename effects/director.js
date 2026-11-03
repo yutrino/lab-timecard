@@ -16,12 +16,10 @@ const COLORS = {
   rainbow: RAINBOW,
 };
 const LINE_COLOR = { blue: '#7fb2ff', green: '#7dffad', red: '#ff6b6b', gold: '#ffd84d', rainbow: '#ffffff' };
-const FLASH_GAP = 400; // 1秒に3回を超えて光らせない
 
 const sound = createSound();
 const silent = new Proxy({}, { get: () => () => {} });
 let current = null;
-let lastFlash = 0;
 
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
   if (signal.aborted) { reject(signal.reason); return; }
@@ -61,20 +59,26 @@ function createStage(controller, sfx, reduced) {
   root.className = 'fx';
   root.setAttribute('aria-hidden', 'true');
   root.innerHTML = '<div class="fx-shade"></div><div class="fx-glow"></div><div class="fx-rays"></div><div class="fx-lines"></div>'
-    + '<canvas class="fx-canvas"></canvas><div class="fx-stage"></div><div class="fx-leds"></div><div class="fx-flash"></div>';
+    + '<canvas class="fx-canvas"></canvas><div class="fx-stage"></div><div class="fx-leds"></div><div class="fx-black"></div><div class="fx-flash"></div>';
   document.body.append(root);
-  const [shade, glow, rays, lines, canvas, stage, leds, flashLayer] = root.children;
+  const [shade, glow, rays, lines, canvas, stage, leds, black, flashLayer] = root.children;
   const particles = createParticles(canvas);
   const timers = new Set();
 
+  // 「押せ！」の間だけ、タップは飛ばすのではなくボタンを押したことになる
+  let onPush = null;
   const skip = () => controller.abort(new DOMException('skip', 'AbortError'));
-  const onKey = (event) => {
-    if (['Escape', 'Enter', ' '].includes(event.key)) {
-      event.preventDefault();
-      skip();
-    }
+  const tap = () => {
+    if (onPush) onPush();
+    else skip();
   };
-  root.addEventListener('pointerdown', skip);
+  const onKey = (event) => {
+    if (event.key === 'Escape') skip();
+    else if (event.key === 'Enter' || event.key === ' ') tap();
+    else return;
+    event.preventDefault();
+  };
+  root.addEventListener('pointerdown', tap);
   document.addEventListener('keydown', onKey, true);
 
   const add = (html) => {
@@ -109,13 +113,51 @@ function createStage(controller, sfx, reduced) {
       );
     },
 
-    // 画面全体の光。間隔は FLASH_GAP より詰めない
-    flash(tier = null) {
-      const now = performance.now();
-      if (now - lastFlash < FLASH_GAP) return;
-      lastFlash = now;
+    // 画面全体の光
+    flash(tier = null, duration = 280) {
       flashLayer.style.background = tier == null ? '#fff' : LINE_COLOR[TIERS[tier]];
-      flashLayer.animate([{ opacity: 0 }, { opacity: tier == null ? 0.9 : 0.7 }, { opacity: 0 }], { duration: 280 });
+      flashLayer.animate([{ opacity: 0 }, { opacity: tier == null ? 0.95 : 0.75 }, { opacity: 0 }], { duration });
+    },
+
+    // 白と色を交互に連打する
+    strobe(tier, count, gap = 75) {
+      for (let i = 0; i < count; i += 1) later(() => this.flash(i % 2 ? tier : null, gap * 1.4), i * gap);
+    },
+
+    // 一瞬すべてを消す（無音の溜め）
+    blackout(on) {
+      black.style.opacity = on ? '1' : '0';
+    },
+
+    // 「押せ！」。押すか timeout で進む
+    async push(tier, timeout) {
+      const el = add(`<div class="fx-push" data-tier="${TIERS[tier]}"><span>押せ！</span></div>`);
+      el.animate([{ transform: 'scale(0)' }, { transform: 'scale(1.15)', offset: 0.7 }, { transform: 'scale(1)' }], { duration: 300, easing: 'ease-out', fill: 'forwards' });
+      sfx.riser(timeout / 1000);
+      try {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, timeout);
+          onPush = () => { clearTimeout(timer); resolve(); };
+          signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+        });
+      } finally {
+        onPush = null;
+      }
+      sfx.cut();
+      sfx.push();
+      this.vibrate(120);
+      el.animate([{ transform: 'scale(1)' }, { transform: 'scale(.8)' }, { transform: 'scale(2.5)', opacity: 0 }], { duration: 260, fill: 'forwards' })
+        .finished.then(() => el.remove()).catch(() => {});
+    },
+
+    // 画面中央に大きく出す文字（再変動など）
+    callout(text, tier) {
+      const el = add(`<p class="fx-big fx-callout" data-tier="${TIERS[tier]}" style="--n: ${[...text].length}">${text}</p>`);
+      el.animate(
+        [{ transform: 'scale(2.6)', opacity: 0 }, { transform: 'scale(.95)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }],
+        { duration: 300, easing: 'ease-out', fill: 'forwards' },
+      );
+      return el;
     },
 
     // 画面のふちを走る電飾。fast でリーチ中の速さになる
@@ -175,8 +217,13 @@ function createStage(controller, sfx, reduced) {
         const step = () => {
           const s = state[i];
           if (s.stopped) return;
-          cell.textContent = String(Math.floor(Math.random() * 10));
-          if (s.slowing) s.delay = Math.min(s.delay * 1.15, 300);
+          if (s.slowing) {
+            // 本物のリールのように1コマずつ送る
+            cell.textContent = String((Number(cell.textContent) + 1) % 10);
+            s.delay = Math.min(s.delay * 1.12, 420);
+          } else {
+            cell.textContent = String(Math.floor(Math.random() * 10));
+          }
           later(step, s.delay);
         };
         step();
@@ -190,6 +237,12 @@ function createStage(controller, sfx, reduced) {
           cell.classList.remove('spin', 'reach');
           cell.animate([{ transform: 'translateY(-18%)' }, { transform: 'translateY(6%)' }, { transform: 'none' }], { duration: 180 });
           cell.animate([{ filter: 'brightness(2.6)', boxShadow: '0 0 1.2em #fff' }, {}], { duration: 320 });
+        },
+        // 目の数字の1コマ手前で止まったように見せる
+        tease(i) {
+          state[i].stopped = true;
+          cells[i].textContent = String((Number(values[i]) + 9) % 10);
+          cells[i].classList.remove('spin');
         },
         slow(i) {
           state[i].slowing = true;
@@ -260,7 +313,7 @@ function createStage(controller, sfx, reduced) {
     },
 
     close(aborted, skippedByUser) {
-      root.removeEventListener('pointerdown', skip);
+      root.removeEventListener('pointerdown', tap);
       document.removeEventListener('keydown', onKey, true);
       timers.forEach(clearTimeout);
       if (skippedByUser) sfx.cut?.();
@@ -299,60 +352,125 @@ const SCENES = {
   async stop(fx, { length, today, tier }) {
     const minutes = Math.floor(length / 60000);
     const values = [String(Math.floor(minutes / 60)), String(Math.floor((minutes % 60) / 10)), String(minutes % 10)];
+    const chance = Math.random;
     // 結果の色は時間で決まる。見せ始める色だけをランダムに下げ、途中で昇格させる
-    let shown = Math.max(0, tier - Math.floor(Math.random() * 3));
+    let shown = Math.max(0, tier - Math.floor(chance() * 3));
+    // 色が上ほど長く溜める
+    const pseudo = [0, chance() < 0.3 ? 1 : 0, 1, 2, 2][tier] + (tier >= 3 && chance() < 0.5 ? 1 : 0);
+    const withPush = tier >= 2 || chance() < 0.25;
 
-    fx.dim(0.94);
-    await fx.wait(250); // 溜め
+    // 1. 暗転して溜める
+    fx.dim(0.96, 400);
+    if (tier >= 2) {
+      fx.sfx.heartbeat();
+      fx.vibrate([30, 150, 30]);
+    }
+    await fx.wait(tier >= 2 ? 1300 : 600);
+
+    // 2. 再変動（いったん外れ目で止めて、もう一度回す）
+    for (let i = 1; i <= pseudo; i += 1) {
+      fx.lines(shown);
+      fx.leds(shown);
+      const fake = fx.reels(values.map(() => String(Math.floor(chance() * 10))), shown);
+      await fx.wait(600);
+      for (const k of [0, 2, 1]) {
+        fake.stop(k);
+        fx.sfx.tick();
+        await fx.wait(160);
+      }
+      await fx.wait(350);
+      fx.leave(fake.el, 'scale(1.8)');
+      if (i >= 2 && shown < tier - 1) shown += 1;
+      fx.strobe(shown, 3);
+      fx.shake(1.2);
+      fx.sfx.up(i);
+      fx.vibrate(50);
+      const call = fx.callout(`再変動×${i + 1}`, shown);
+      await fx.wait(900);
+      fx.leave(call, 'scale(.4)');
+    }
+
+    // 3. リーチ
     fx.lines(shown);
     fx.leds(shown);
-    fx.flash(shown);
+    fx.strobe(shown, 2);
     const band = fx.band('リーチ', shown);
-    fx.shake(1.2);
+    fx.shake(1.5);
     fx.sfx.hit();
-    fx.vibrate(60);
-    await fx.wait(800);
+    fx.vibrate(80);
+    await fx.wait(1300);
 
+    // 4. リール。真ん中を最後まで粘る
     fx.leave(band);
     const reels = fx.reels(values, shown);
-    await fx.wait(450);
+    await fx.wait(700);
     reels.stop(0);
     fx.sfx.tick();
-    await fx.wait(400);
+    await fx.wait(600);
     reels.stop(2);
     fx.sfx.tick();
-
     reels.slow(1);
     fx.leds(shown, true);
     fx.glow(shown);
-    while (shown < tier) {
-      await fx.wait(600);
+    if (tier >= 2) fx.sfx.heartbeat();
+
+    const lastBeforePush = withPush && shown < tier ? tier - 1 : tier;
+    while (shown < lastBeforePush) {
+      await fx.wait(1000);
       shown += 1;
       reels.color(shown);
       fx.lines(shown);
       fx.leds(shown, true);
       fx.glow(shown);
-      fx.flash(shown);
-      fx.shake(0.6);
+      fx.strobe(shown, 3);
+      fx.shake(0.8);
       fx.sfx.up(shown);
-      fx.vibrate(30);
+      fx.vibrate(40);
     }
-    await fx.wait(700);
-    reels.stop(1);
-    fx.sfx.tick();
-    await fx.wait(250);
+    await fx.wait(1500);
 
+    if (tier >= 2) {
+      // 1コマ手前で止まった…と見せてから、すべって揃う
+      reels.tease(1);
+      fx.sfx.tick();
+      await fx.wait(900);
+      reels.stop(1);
+      fx.strobe(shown, 2);
+      fx.shake(1.5);
+      fx.sfx.up(shown + 1);
+    } else {
+      reels.stop(1);
+      fx.sfx.tick();
+    }
+    await fx.wait(600);
+
+    // 5. 押せ！ 最後の昇格はボタンで起きる
+    if (withPush) {
+      await fx.push(shown, 6000);
+      if (shown < tier) {
+        shown = tier;
+        reels.color(shown);
+        fx.glow(shown);
+      }
+    }
+
+    // 6. 無音の暗転
+    fx.blackout(true);
+    await fx.wait(tier >= 2 ? 650 : 300);
+    fx.blackout(false);
+
+    // 7. 結果
     fx.leave(reels.el, 'translateY(-40%) scale(.6)');
     fx.result(tier, `今回 ${formatDuration(length)}・きょう ${formatDuration(today)}`);
     fx.rays(tier);
     fx.leds(tier, true);
-    fx.twinkle(20 + tier * 25, 2.2);
-    fx.flash();
-    fx.shake(tier >= 2 ? 2 : 1);
+    fx.twinkle(20 + tier * 25, 2.6);
+    fx.strobe(tier, [1, 2, 4, 8, 14][tier]);
+    fx.shake(tier >= 2 ? 2.2 : 1);
     fx.burst(tier);
     fx.sfx.win(tier);
-    fx.vibrate(tier >= 3 ? [80, 60, 80, 60, 200] : [60]);
-    await fx.wait(1700 + tier * 300);
+    fx.vibrate(tier >= 3 ? [80, 60, 80, 60, 300] : [60]);
+    await fx.wait(2000 + tier * 400);
   },
 };
 
